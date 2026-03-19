@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base href="$FLUTTER_BASE_HREF">
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="description" content="HeatMap — NGO Emergency Response">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="HeatMap">
+  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+  <link rel="icon" type="image/png" href="favicon.png"/>
+  <title>HeatMap — Emergency Response</title>
+  <link rel="manifest" href="manifest.json">
+
+  <!-- ── Leaflet CSS ── -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+
+  <!-- ── Leaflet JS ── -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- ── Leaflet Heat Plugin ── -->
+  <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+
+  <!-- ── Firebase SDK ── -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+    import { getFirestore, collection, query, where, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+    // ── Firebase Config (safe to expose on frontend — rules protect data) ──
+    const firebaseConfig = {
+      apiKey: "AIzaSyDwRkQotFi8w0ZzD9i9A9zvQWVNEpvMvqE",
+      authDomain: "heatmap-1dcc6.firebaseapp.com",
+      projectId: "heatmap-1dcc6",
+      storageBucket: "heatmap-1dcc6.appspot.com",
+      messagingSenderId: "1069657110748",
+      appId: "1:1069657110748:web:429e0fa857862b62a8dc19"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+
+    // ── Map Setup ──
+    const map = L.map('leaflet-map', {
+      center: [12.9716, 77.5946], // Bengaluru
+      zoom: 12,
+      zoomControl: true,
+    });
+
+    // ── OpenStreetMap Tile Layer ──
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap contributors',
+      maxZoom: 19,
+    }).addTo(map);
+
+    // ── Heat Map Gradient ──
+    const gradient = {
+      0.2: '#00ff00',  // Green  — Low priority
+      0.5: '#ffff00',  // Yellow — Moderate
+      0.8: '#ff6600',  // Orange — High
+      1.0: '#ff0000',  // Red    — Critical
+    };
+
+    // ── Heat Layer (main) — BIG and always visible ──
+    let heatLayer = L.heatLayer([], {
+      radius: 50,           // Bigger radius
+      blur: 35,             // More blur for glow effect
+      maxZoom: 18,          // Stay visible at all zoom levels
+      minOpacity: 0.6,      // Always visible, never fade out
+      max: 1.0,
+      gradient: gradient,
+    }).addTo(map);
+
+    // ── Ghost Heat Layer (faded, for repeated reports) ──
+    let ghostLayer = L.heatLayer([], {
+      radius: 60,
+      blur: 45,
+      maxZoom: 18,
+      minOpacity: 0.4,
+      max: 1.0,
+      gradient: {
+        0.2: 'rgba(100,100,255,0.3)',
+        0.5: 'rgba(150,100,255,0.4)',
+        1.0: 'rgba(200,50,255,0.5)',
+      },
+    }).addTo(map);
+
+    // ── Active report markers (shown on zoom in) ──
+    let markerLayer = L.layerGroup().addTo(map);
+
+    // ── Store reports locally ──
+    let allReports = {};
+    let activeFilter = 'all'; // 'all', 'Flood', 'Medical', 'Fire', etc.
+
+    // ── Firestore Live Listener — Active Reports ──
+    const reportsQuery = query(
+      collection(db, 'heatmap_reports'),
+      where('resolved', '==', false)
+    );
+
+    onSnapshot(reportsQuery, (snapshot) => {
+      snapshot.docChanges().forEach((change) => {
+        const data = change.doc.data();
+        const id = change.doc.id;
+
+        if (change.type === 'added' || change.type === 'modified') {
+          allReports[id] = data;
+        }
+        if (change.type === 'removed') {
+          delete allReports[id];
+        }
+      });
+
+      // Re-render the map with updated data
+      renderHeatMap();
+    });
+
+    // ── Render Heat Map ──
+    function renderHeatMap() {
+      const heatPoints = [];
+      const ghostPoints = [];
+      markerLayer.clearLayers();
+
+      Object.values(allReports).forEach((report) => {
+        // Apply category filter
+        if (activeFilter !== 'all' && report.category !== activeFilter) return;
+
+        const lat = report.latitude;
+        const lng = report.longitude;
+        const intensity = report.intensity || (report.severity / 10);
+
+        // Add to heat layer
+        heatPoints.push([lat, lng, intensity]);
+
+        // Add to ghost layer if flagged
+        if (report.ghost_heat) {
+          ghostPoints.push([lat, lng, intensity * 0.5]);
+        }
+
+        // Add marker (visible on zoom level 14+)
+        if (map.getZoom() >= 14) {
+          const color = report.zone === 'red' ? '#ff0000'
+                      : report.zone === 'yellow' ? '#ffff00'
+                      : '#00ff00';
+
+          const marker = L.circleMarker([lat, lng], {
+            radius: 8,
+            fillColor: color,
+            color: '#ffffff',
+            weight: 2,
+            opacity: 1,
+            fillOpacity: 0.9,
+          });
+
+          marker.bindPopup(`
+            <div style="font-family: sans-serif; min-width: 180px;">
+              <h3 style="margin:0 0 8px; color:${color};">
+                ${report.zone?.toUpperCase()} ZONE
+              </h3>
+              <b>Category:</b> ${report.category || 'Unknown'}<br>
+              <b>Severity:</b> ${report.severity}/10<br>
+              <b>Coordinates:</b> ${lat.toFixed(4)}, ${lng.toFixed(4)}<br>
+              <b>Reported:</b> ${report.timestamp?.toDate?.()?.toLocaleString() || 'Unknown'}<br>
+              ${report.ghost_heat ? '<br>⚠️ <b>Ghost Heat Zone</b> — Repeated reports!' : ''}
+            </div>
+          `);
+
+          markerLayer.addLayer(marker);
+        }
+      });
+
+      // Update heat layers
+      heatLayer.setLatLngs(heatPoints);
+      ghostLayer.setLatLngs(ghostPoints);
+
+      // Update stats in Flutter via JS channel
+      updateStats();
+    }
+
+    // ── Update stats (sends data to Flutter UI) ──
+    function updateStats() {
+      const reports = Object.values(allReports);
+      const red = reports.filter(r => r.zone === 'red').length;
+      const yellow = reports.filter(r => r.zone === 'yellow').length;
+      const green = reports.filter(r => r.zone === 'green').length;
+      const ghost = reports.filter(r => r.ghost_heat).length;
+
+      const stats = JSON.stringify({ total: reports.length, red, yellow, green, ghost });
+
+      // Send to Flutter if channel exists
+      if (window.HeatMapStats) {
+        window.HeatMapStats.postMessage(stats);
+      }
+
+      // Also update DOM stats panel
+      const el = document.getElementById('stats-data');
+      if (el) el.textContent = stats;
+    }
+
+    // ── Re-render markers on zoom ──
+    map.on('zoomend', renderHeatMap);
+
+    // ── Expose filter function to Flutter ──
+    window.setHeatMapFilter = function(category) {
+      activeFilter = category;
+      renderHeatMap();
+    };
+
+    // ── Expose center map function to Flutter ──
+    window.centerMap = function(lat, lng, zoom) {
+      map.setView([lat, lng], zoom || 14);
+    };
+
+    // ── Make map resize properly ──
+    window.addEventListener('resize', () => map.invalidateSize());
+    setTimeout(() => map.invalidateSize(), 500);
+  </script>
+
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #0a0a0a; }
+    #leaflet-map {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      z-index: 1;
+    }
+    /* Flutter renders on top of the map */
+    flt-glass-pane { z-index: 2 !important; background: transparent !important; }
+    .leaflet-container { background: #1a1a2e; }
+  </style>
+</head>
+<body>
+  <!-- The map sits behind Flutter UI -->
+  <div id="leaflet-map"></div>
+
+  <!-- Hidden stats element for Flutter to read -->
+  <div id="stats-data" style="display:none;"></div>
+
+  <!-- Flutter app renders on top (transparent background) -->
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+</html>
