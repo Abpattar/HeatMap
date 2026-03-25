@@ -4,30 +4,37 @@
   <base href="$FLUTTER_BASE_HREF">
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="description" content="HeatMap — NGO Emergency Response">
+  <meta name="description" content="AURA HeatMap — NGO Emergency Response">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
-  <meta name="apple-mobile-web-app-title" content="HeatMap">
+  <meta name="apple-mobile-web-app-title" content="AURA HeatMap">
   <link rel="apple-touch-icon" href="icons/Icon-192.png">
   <link rel="icon" type="image/png" href="favicon.png"/>
-  <title>HeatMap — Emergency Response</title>
+  <title>AURA — Emergency Response</title>
   <link rel="manifest" href="manifest.json">
 
-  <!-- ── Leaflet CSS ── -->
+  <!-- Leaflet CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <!-- Leaflet Routing Machine CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css"/>
 
-  <!-- ── Leaflet JS ── -->
+  <!-- Google Fonts (Poppins — matches AURA theme) -->
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <!-- Leaflet JS -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-
-  <!-- ── Leaflet Heat Plugin ── -->
+  <!-- Leaflet Heat Plugin -->
   <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+  <!-- Leaflet Routing Machine (FREE, uses OSRM — no API key) -->
+  <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
 
-  <!-- ── Firebase SDK ── -->
+  <!-- Firebase SDK -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-    import { getFirestore, collection, query, where, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+    import { getFirestore, collection, query, where, onSnapshot, doc, updateDoc, increment }
+      from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
-    // ── Firebase Config (safe to expose on frontend — rules protect data) ──
+    // ── Firebase Config ──────────────────────────────────────────────────────
     const firebaseConfig = {
       apiKey: "AIzaSyDwRkQotFi8w0ZzD9i9A9zvQWVNEpvMvqE",
       authDomain: "heatmap-1dcc6.firebaseapp.com",
@@ -37,207 +44,410 @@
       appId: "1:1069657110748:web:429e0fa857862b62a8dc19"
     };
 
-    const app = initializeApp(firebaseConfig);
-    const db = getFirestore(app);
+    const fbApp = initializeApp(firebaseConfig);
+    const db = getFirestore(fbApp);
 
-    // ── Map Setup ──
+    // ── Map Setup ────────────────────────────────────────────────────────────
     const map = L.map('leaflet-map', {
       center: [12.9716, 77.5946], // Bengaluru
       zoom: 12,
       zoomControl: true,
     });
 
-    // ── OpenStreetMap Tile Layer ──
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '© OpenStreetMap contributors',
+    // Dark tile layer (Carto Dark — free, no API key)
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+      attribution: '© OpenStreetMap contributors © CARTO',
+      subdomains: 'abcd',
       maxZoom: 19,
     }).addTo(map);
 
-    // ── Heat Map Gradient ──
-    const gradient = {
-      0.2: '#00ff00',  // Green  — Low priority
-      0.5: '#ffff00',  // Yellow — Moderate
-      0.8: '#ff6600',  // Orange — High
-      1.0: '#ff0000',  // Red    — Critical
+    // ── SVG Severity Icons (Red / Yellow / Green) ────────────────────────────
+    function makeSvgIcon(color, pulse = false) {
+      const glowColor = color === '#ef4444' ? 'rgba(239,68,68,0.4)'
+                      : color === '#f59e0b' ? 'rgba(245,158,11,0.4)'
+                      : 'rgba(16,185,129,0.4)';
+
+      const svg = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="36" height="44" viewBox="0 0 36 44">
+          <defs>
+            <filter id="glow">
+              <feGaussianBlur stdDeviation="2" result="blur"/>
+              <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+            </filter>
+          </defs>
+          <!-- Drop shadow -->
+          <ellipse cx="18" cy="42" rx="8" ry="3" fill="rgba(0,0,0,0.3)"/>
+          <!-- Pin body -->
+          <path d="M18 2 C10 2 4 8 4 16 C4 26 18 42 18 42 C18 42 32 26 32 16 C32 8 26 2 18 2 Z"
+            fill="${color}" filter="url(#glow)" stroke="rgba(255,255,255,0.8)" stroke-width="1.5"/>
+          <!-- Inner circle -->
+          <circle cx="18" cy="16" r="7" fill="rgba(255,255,255,0.25)"/>
+          <!-- Exclamation mark -->
+          <text x="18" y="20" text-anchor="middle" font-size="12" font-weight="bold"
+            fill="white" font-family="Arial">!</text>
+        </svg>`;
+
+      return L.divIcon({
+        html: `<div class="aura-pin ${pulse ? 'pin-pulse' : ''}" style="--pin-glow:${glowColor}">${svg}</div>`,
+        className: '',
+        iconSize: [36, 44],
+        iconAnchor: [18, 44],
+        popupAnchor: [0, -44],
+      });
+    }
+
+    const ICONS = {
+      red:    makeSvgIcon('#ef4444', true),
+      yellow: makeSvgIcon('#f59e0b', false),
+      green:  makeSvgIcon('#10b981', false),
     };
 
-    // ── Heat Layer (main) — BIG and always visible ──
-    let heatLayer = L.heatLayer([], {
-      radius: 50,           // Bigger radius
-      blur: 35,             // More blur for glow effect
-      maxZoom: 18,          // Stay visible at all zoom levels
-      minOpacity: 0.6,      // Always visible, never fade out
-      max: 1.0,
-      gradient: gradient,
-    }).addTo(map);
-
-    // ── Ghost Heat Layer (faded, for repeated reports) ──
-    let ghostLayer = L.heatLayer([], {
-      radius: 60,
-      blur: 45,
-      maxZoom: 18,
-      minOpacity: 0.4,
-      max: 1.0,
-      gradient: {
-        0.2: 'rgba(100,100,255,0.3)',
-        0.5: 'rgba(150,100,255,0.4)',
-        1.0: 'rgba(200,50,255,0.5)',
-      },
-    }).addTo(map);
-
-    // ── Active report markers (shown on zoom in) ──
+    // ── Layers ───────────────────────────────────────────────────────────────
     let markerLayer = L.layerGroup().addTo(map);
+    let routingControl = null;  // Active blue-line route
+    let userLocation = null;    // Volunteer's GPS position
 
-    // ── Store reports locally ──
+    // Store all reports
     let allReports = {};
-    let activeFilter = 'all'; // 'all', 'Flood', 'Medical', 'Fire', etc.
+    let activeFilter = 'all';
+    let ghostVisible = false;
 
-    // ── Firestore Live Listener — Active Reports ──
-    const reportsQuery = query(
-      collection(db, 'heatmap_reports'),
-      where('resolved', '==', false)
-    );
+    // Ghost heat layer
+    let ghostLayer = L.heatLayer([], {
+      radius: 60, blur: 45, maxZoom: 18, minOpacity: 0.35,
+      gradient: { 0.2: 'rgba(100,100,255,0.3)', 0.5: 'rgba(150,100,255,0.4)', 1.0: 'rgba(200,50,255,0.5)' },
+    }).addTo(map);
+
+    // ── Try to get user's location ───────────────────────────────────────────
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        pos => { userLocation = [pos.coords.latitude, pos.coords.longitude]; },
+        () => { userLocation = [12.9716, 77.5946]; } // Default: Bengaluru
+      );
+    }
+
+    // ── Build the AURA-styled Incident Info Popup ────────────────────────────
+    function buildPopup(report, docId) {
+      const zoneColor = report.zone === 'red' ? '#ef4444'
+                      : report.zone === 'yellow' ? '#f59e0b'
+                      : '#10b981';
+
+      const zoneBg = report.zone === 'red' ? 'rgba(239,68,68,0.12)'
+                   : report.zone === 'yellow' ? 'rgba(245,158,11,0.12)'
+                   : 'rgba(16,185,129,0.12)';
+
+      const severity = report.severity || 0;
+      const complaints = report.complaint_count || 1;
+      const accepted = report.people_accepted || 0;
+      const problem = report.problem || report.category || 'Unknown Issue';
+      const location = report.location_name || `${(report.latitude||0).toFixed(4)}, ${(report.longitude||0).toFixed(4)}`;
+      const status = report.task_status || 'open';
+
+      const statusLabel = status === 'resolved' ? '✅ Resolved'
+                        : status === 'in_progress' ? '🔧 In Progress'
+                        : '🔴 Open';
+
+      return `
+        <div class="aura-popup">
+          <!-- Header band -->
+          <div class="aura-popup-header" style="background:${zoneBg}; border-left: 4px solid ${zoneColor}">
+            <span class="aura-zone-badge" style="background:${zoneColor}">${(report.zone||'').toUpperCase()}</span>
+            <span class="aura-status">${statusLabel}</span>
+          </div>
+
+          <!-- Problem title -->
+          <div class="aura-popup-title">${problem}</div>
+
+          <!-- Stats row -->
+          <div class="aura-popup-stats">
+            <div class="aura-stat">
+              <span class="aura-stat-val" style="color:${zoneColor}">${severity}<span style="font-size:11px">/10</span></span>
+              <span class="aura-stat-label">Severity</span>
+            </div>
+            <div class="aura-stat-divider"></div>
+            <div class="aura-stat">
+              <span class="aura-stat-val">${complaints}</span>
+              <span class="aura-stat-label">Complaints</span>
+            </div>
+            <div class="aura-stat-divider"></div>
+            <div class="aura-stat">
+              <span class="aura-stat-val">${accepted}</span>
+              <span class="aura-stat-label">Accepted</span>
+            </div>
+          </div>
+
+          <!-- Location -->
+          <div class="aura-popup-location">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="${zoneColor}">
+              <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/>
+            </svg>
+            ${location}
+          </div>
+
+          <!-- Action buttons (AURA style) -->
+          <div class="aura-popup-actions">
+            <button class="aura-btn aura-btn-secondary"
+              onclick="window.showMoreInfo('${docId}')">More Info</button>
+            <button class="aura-btn aura-btn-primary"
+              onclick="window.acceptTask('${docId}', ${report.latitude}, ${report.longitude})"
+              style="background: linear-gradient(135deg, ${zoneColor}, ${zoneColor}cc)">
+              Accept Task →
+            </button>
+          </div>
+        </div>`;
+    }
+
+    // ── Render Map ───────────────────────────────────────────────────────────
+    function renderHeatMap() {
+      const ghostPoints = [];
+      markerLayer.clearLayers();
+
+      Object.entries(allReports).forEach(([docId, report]) => {
+        if (activeFilter !== 'all' && report.category !== activeFilter) return;
+
+        const lat = report.latitude;
+        const lng = report.longitude;
+        const zone = report.zone || 'green';
+        const intensity = report.intensity || (report.severity / 10);
+
+        if (report.ghost_heat) ghostPoints.push([lat, lng, intensity * 0.5]);
+
+        // Always show severity icons (not zoom-locked)
+        const marker = L.marker([lat, lng], { icon: ICONS[zone] || ICONS.green });
+
+        marker.bindPopup(buildPopup(report, docId), {
+          maxWidth: 280,
+          className: 'aura-leaflet-popup',
+        });
+
+        markerLayer.addLayer(marker);
+      });
+
+      if (ghostVisible) ghostLayer.setLatLngs(ghostPoints);
+      else ghostLayer.setLatLngs([]);
+
+      updateStats();
+    }
+
+    // ── Accept Task → Navigate ───────────────────────────────────────────────
+    window.acceptTask = async function(docId, destLat, destLng) {
+      // 1. Increment people_accepted in Firestore
+      try {
+        const ref = doc(db, 'heatmap_reports', docId);
+        await updateDoc(ref, { people_accepted: increment(1), task_status: 'in_progress' });
+      } catch (e) {
+        console.warn('Firestore update failed, continuing with navigation.', e);
+      }
+
+      // 2. Get user's current location (or last known)
+      const from = userLocation || [12.9716, 77.5946];
+
+      // 3. Clear existing route
+      if (routingControl) {
+        map.removeControl(routingControl);
+        routingControl = null;
+      }
+
+      // 4. Draw blue-line route via OSRM (free, no API key)
+      routingControl = L.Routing.control({
+        waypoints: [
+          L.latLng(from[0], from[1]),
+          L.latLng(destLat, destLng),
+        ],
+        routeWhileDragging: false,
+        show: true,
+        addWaypoints: false,
+        fitSelectedRoutes: true,
+        lineOptions: {
+          styles: [{ color: '#0ea5e9', weight: 5, opacity: 0.85 }],
+        },
+        createMarker: () => null, // Don't replace our custom markers
+        router: L.Routing.osrmv1({ serviceUrl: 'https://router.project-osrm.org/route/v1' }),
+      }).addTo(map);
+
+      // Close any open popup
+      map.closePopup();
+    };
+
+    // ── More Info (extend popup or log — hook Flutter here) ──────────────────
+    window.showMoreInfo = function(docId) {
+      const report = allReports[docId];
+      if (!report) return;
+      // Notify Flutter (if JS channel exists)
+      if (window.AuraChannel) window.AuraChannel.postMessage(JSON.stringify({ action: 'more_info', id: docId, report }));
+      console.log('More info:', report);
+    };
+
+    // ── Firestore Live Listener ──────────────────────────────────────────────
+    const reportsQuery = query(collection(db, 'heatmap_reports'), where('resolved', '==', false));
 
     onSnapshot(reportsQuery, (snapshot) => {
       snapshot.docChanges().forEach((change) => {
-        const data = change.doc.data();
         const id = change.doc.id;
-
         if (change.type === 'added' || change.type === 'modified') {
-          allReports[id] = data;
+          allReports[id] = change.doc.data();
         }
         if (change.type === 'removed') {
           delete allReports[id];
         }
       });
-
-      // Re-render the map with updated data
       renderHeatMap();
     });
 
-    // ── Render Heat Map ──
-    function renderHeatMap() {
-      const heatPoints = [];
-      const ghostPoints = [];
-      markerLayer.clearLayers();
-
-      Object.values(allReports).forEach((report) => {
-        // Apply category filter
-        if (activeFilter !== 'all' && report.category !== activeFilter) return;
-
-        const lat = report.latitude;
-        const lng = report.longitude;
-        const intensity = report.intensity || (report.severity / 10);
-
-        // Add to heat layer
-        heatPoints.push([lat, lng, intensity]);
-
-        // Add to ghost layer if flagged
-        if (report.ghost_heat) {
-          ghostPoints.push([lat, lng, intensity * 0.5]);
-        }
-
-        // Add marker (visible on zoom level 14+)
-        if (map.getZoom() >= 14) {
-          const color = report.zone === 'red' ? '#ff0000'
-                      : report.zone === 'yellow' ? '#ffff00'
-                      : '#00ff00';
-
-          const marker = L.circleMarker([lat, lng], {
-            radius: 8,
-            fillColor: color,
-            color: '#ffffff',
-            weight: 2,
-            opacity: 1,
-            fillOpacity: 0.9,
-          });
-
-          marker.bindPopup(`
-            <div style="font-family: sans-serif; min-width: 180px;">
-              <h3 style="margin:0 0 8px; color:${color};">
-                ${report.zone?.toUpperCase()} ZONE
-              </h3>
-              <b>Category:</b> ${report.category || 'Unknown'}<br>
-              <b>Severity:</b> ${report.severity}/10<br>
-              <b>Coordinates:</b> ${lat.toFixed(4)}, ${lng.toFixed(4)}<br>
-              <b>Reported:</b> ${report.timestamp?.toDate?.()?.toLocaleString() || 'Unknown'}<br>
-              ${report.ghost_heat ? '<br>⚠️ <b>Ghost Heat Zone</b> — Repeated reports!' : ''}
-            </div>
-          `);
-
-          markerLayer.addLayer(marker);
-        }
-      });
-
-      // Update heat layers
-      heatLayer.setLatLngs(heatPoints);
-      ghostLayer.setLatLngs(ghostPoints);
-
-      // Update stats in Flutter via JS channel
-      updateStats();
-    }
-
-    // ── Update stats (sends data to Flutter UI) ──
+    // ── Stats for Flutter UI ─────────────────────────────────────────────────
     function updateStats() {
       const reports = Object.values(allReports);
-      const red = reports.filter(r => r.zone === 'red').length;
-      const yellow = reports.filter(r => r.zone === 'yellow').length;
-      const green = reports.filter(r => r.zone === 'green').length;
-      const ghost = reports.filter(r => r.ghost_heat).length;
-
-      const stats = JSON.stringify({ total: reports.length, red, yellow, green, ghost });
-
-      // Send to Flutter if channel exists
-      if (window.HeatMapStats) {
-        window.HeatMapStats.postMessage(stats);
-      }
-
-      // Also update DOM stats panel
+      const stats = JSON.stringify({
+        total: reports.length,
+        red:    reports.filter(r => r.zone === 'red').length,
+        yellow: reports.filter(r => r.zone === 'yellow').length,
+        green:  reports.filter(r => r.zone === 'green').length,
+        ghost:  reports.filter(r => r.ghost_heat).length,
+      });
+      if (window.HeatMapStats) window.HeatMapStats.postMessage(stats);
       const el = document.getElementById('stats-data');
       if (el) el.textContent = stats;
     }
 
-    // ── Re-render markers on zoom ──
+    // ── Flutter interop ──────────────────────────────────────────────────────
+    window.setHeatMapFilter = (category) => { activeFilter = category; renderHeatMap(); };
+    window.centerMap = (lat, lng, zoom) => map.setView([lat, lng], zoom || 14);
+    window.toggleGhostHeat = (show) => { ghostVisible = show; renderHeatMap(); };
+
     map.on('zoomend', renderHeatMap);
-
-    // ── Expose filter function to Flutter ──
-    window.setHeatMapFilter = function(category) {
-      activeFilter = category;
-      renderHeatMap();
-    };
-
-    // ── Expose center map function to Flutter ──
-    window.centerMap = function(lat, lng, zoom) {
-      map.setView([lat, lng], zoom || 14);
-    };
-
-    // ── Make map resize properly ──
     window.addEventListener('resize', () => map.invalidateSize());
     setTimeout(() => map.invalidateSize(), 500);
   </script>
 
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body { width: 100%; height: 100%; overflow: hidden; background: #0a0a0a; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #0a0a0a; font-family: 'Poppins', sans-serif; }
+
     #leaflet-map {
-      position: absolute;
-      top: 0; left: 0;
-      width: 100%; height: 100%;
-      z-index: 1;
+      position: absolute; top: 0; left: 0;
+      width: 100%; height: 100%; z-index: 1;
     }
-    /* Flutter renders on top of the map */
+
+    /* Flutter renders on top */
     flt-glass-pane { z-index: 2 !important; background: transparent !important; }
     .leaflet-container { background: #1a1a2e; }
+
+    /* ── Pin pulse animation ── */
+    .aura-pin { position: relative; }
+    .aura-pin.pin-pulse::after {
+      content: '';
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -60%);
+      width: 44px; height: 44px;
+      border-radius: 50%;
+      background: var(--pin-glow, rgba(239,68,68,0.4));
+      animation: pinPulse 1.8s ease-out infinite;
+      z-index: -1;
+    }
+    @keyframes pinPulse {
+      0%   { transform: translate(-50%,-60%) scale(0.5); opacity: 0.8; }
+      100% { transform: translate(-50%,-60%) scale(2.2); opacity: 0; }
+    }
+
+    /* ── AURA Popup Container ── */
+    .aura-leaflet-popup .leaflet-popup-content-wrapper {
+      background: rgba(15, 20, 30, 0.96);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 16px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.04);
+      padding: 0;
+      overflow: hidden;
+      backdrop-filter: blur(20px);
+    }
+    .aura-leaflet-popup .leaflet-popup-tip-container { display: none; }
+    .aura-leaflet-popup .leaflet-popup-content { margin: 0; width: 272px !important; }
+    .aura-leaflet-popup .leaflet-popup-close-button {
+      color: rgba(255,255,255,0.5) !important;
+      font-size: 18px !important;
+      top: 8px !important; right: 10px !important;
+    }
+
+    /* ── Popup internals ── */
+    .aura-popup { font-family: 'Poppins', sans-serif; color: #e2e8f0; }
+
+    .aura-popup-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 14px 10px 10px;
+      background: rgba(239,68,68,0.1);
+    }
+
+    .aura-zone-badge {
+      font-size: 10px; font-weight: 700; letter-spacing: 1px;
+      color: white; padding: 3px 8px; border-radius: 20px;
+    }
+
+    .aura-status { font-size: 11px; color: rgba(255,255,255,0.65); font-weight: 500; }
+
+    .aura-popup-title {
+      font-size: 14px; font-weight: 600; color: #f1f5f9;
+      padding: 12px 14px 4px; line-height: 1.4;
+    }
+
+    .aura-popup-stats {
+      display: flex; align-items: center; justify-content: space-around;
+      padding: 10px 14px; border-top: 1px solid rgba(255,255,255,0.06);
+      border-bottom: 1px solid rgba(255,255,255,0.06); margin-top: 6px;
+    }
+    .aura-stat { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+    .aura-stat-val { font-size: 20px; font-weight: 700; color: #f1f5f9; line-height: 1; }
+    .aura-stat-label { font-size: 10px; color: rgba(255,255,255,0.45); text-transform: uppercase; letter-spacing: 0.5px; }
+    .aura-stat-divider { width: 1px; height: 32px; background: rgba(255,255,255,0.08); }
+
+    .aura-popup-location {
+      display: flex; align-items: center; gap: 6px;
+      padding: 8px 14px;
+      font-size: 11px; color: rgba(255,255,255,0.5);
+    }
+
+    .aura-popup-actions {
+      display: flex; gap: 8px;
+      padding: 10px 14px 14px;
+    }
+
+    /* Buttons — AURA mint/green palette matches teammate's theme */
+    .aura-btn {
+      flex: 1; padding: 9px 0; border-radius: 10px;
+      font-family: 'Poppins', sans-serif; font-size: 12px; font-weight: 600;
+      border: none; cursor: pointer; transition: all 0.2s ease;
+    }
+    .aura-btn:active { transform: scale(0.96); }
+
+    .aura-btn-secondary {
+      background: rgba(255,255,255,0.08);
+      color: rgba(255,255,255,0.75);
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+    .aura-btn-secondary:hover { background: rgba(255,255,255,0.13); }
+
+    .aura-btn-primary {
+      color: white;
+      box-shadow: 0 4px 14px rgba(0,0,0,0.4);
+    }
+    .aura-btn-primary:hover { filter: brightness(1.15); }
+
+    /* ── Routing machine panel override (dark) ── */
+    .leaflet-routing-container {
+      background: rgba(15,20,30,0.95) !important;
+      color: #e2e8f0 !important;
+      border-radius: 12px !important;
+      border: 1px solid rgba(255,255,255,0.08) !important;
+      font-family: 'Poppins', sans-serif !important;
+      font-size: 12px !important;
+    }
+    .leaflet-routing-alt { background: transparent !important; }
+    .leaflet-routing-alt h2, .leaflet-routing-alt h3 { color: #94a3b8 !important; }
   </style>
 </head>
 <body>
-  <!-- The map sits behind Flutter UI -->
   <div id="leaflet-map"></div>
-
-  <!-- Hidden stats element for Flutter to read -->
   <div id="stats-data" style="display:none;"></div>
-
-  <!-- Flutter app renders on top (transparent background) -->
+  <!-- Flutter renders on top -->
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>
