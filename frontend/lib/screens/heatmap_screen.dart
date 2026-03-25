@@ -130,8 +130,8 @@ class _HeatMapScreenState extends State<HeatMapScreen> {
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
-            Colors.black.withOpacity(0.85),
-            Colors.black.withOpacity(0.0),
+            Colors.black.withValues(alpha: 0.85),
+            Colors.black.withValues(alpha: 0.0),
           ],
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
@@ -143,7 +143,7 @@ class _HeatMapScreenState extends State<HeatMapScreen> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(
-              color: Colors.red.withOpacity(0.85),
+              color: Colors.red.withValues(alpha: 0.85),
               borderRadius: BorderRadius.circular(8),
             ),
             child: const Row(
@@ -167,9 +167,9 @@ class _HeatMapScreenState extends State<HeatMapScreen> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.6),
+              color: Colors.black.withValues(alpha: 0.6),
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.green.withOpacity(0.5)),
+              border: Border.all(color: Colors.green.withValues(alpha: 0.5)),
             ),
             child: const Row(
               children: [
@@ -193,7 +193,7 @@ class _HeatMapScreenState extends State<HeatMapScreen> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.7),
+                color: Colors.black.withValues(alpha: 0.7),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Text(
@@ -212,12 +212,12 @@ class _HeatMapScreenState extends State<HeatMapScreen> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
-          color: Colors.black.withOpacity(0.75),
+          color: Colors.black.withValues(alpha: 0.75),
           borderRadius: BorderRadius.circular(10),
           border: Border.all(
             color: _showGhostHeat
-                ? Colors.purple.withOpacity(0.7)
-                : Colors.grey.withOpacity(0.3),
+                ? Colors.purple.withValues(alpha: 0.7)
+                : Colors.grey.withValues(alpha: 0.3),
           ),
         ),
         child: Row(

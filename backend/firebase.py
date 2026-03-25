@@ -8,12 +8,16 @@ if not firebase_admin._apps:
     config_json = os.environ.get('FIREBASE_CONFIG_JSON')
 
     if config_json:
-        # Vercel: parse env var JSON and write to a temp file for the SDK
+        # Vercel: parse env var JSON, write to a temp file for the SDK, then clean up
         config_dict = json.loads(config_json)
         tmp = tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False)
-        json.dump(config_dict, tmp)
-        tmp.flush()
-        cred = credentials.Certificate(tmp.name)
+        try:
+            json.dump(config_dict, tmp)
+            tmp.flush()
+            tmp.close()
+            cred = credentials.Certificate(tmp.name)
+        finally:
+            os.unlink(tmp.name)  # Always delete the temp file — no resource leak
     else:
         # Local dev fallback: use the key file
         KEY_PATH = os.path.join(os.path.dirname(__file__), "firebase_key.json")

@@ -24,9 +24,9 @@ class FilterBar extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.78),
+        color: Colors.black.withValues(alpha: 0.78),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withOpacity(0.08)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -57,10 +57,10 @@ class FilterBar extends StatelessWidget {
                     margin: const EdgeInsets.only(right: 8),
                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
                     decoration: BoxDecoration(
-                      color: isActive ? color.withOpacity(0.25) : Colors.white.withOpacity(0.05),
+                      color: isActive ? color.withValues(alpha: 0.25) : Colors.white.withValues(alpha: 0.05),
                       borderRadius: BorderRadius.circular(20),
                       border: Border.all(
-                        color: isActive ? color : Colors.white.withOpacity(0.15),
+                        color: isActive ? color : Colors.white.withValues(alpha: 0.15),
                         width: isActive ? 1.5 : 1,
                       ),
                     ),
