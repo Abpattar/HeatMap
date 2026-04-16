@@ -10,12 +10,20 @@ A real-time geospatial heat map for NGO emergency response, built with Flutter W
 
 - **Real-time Crisis Visualization** - Live markers for emergency incidents with severity-based colors (Red/Yellow/Green)
 - **Severity-Based Ripple Effects** - All markers have animated ripples; intensity varies by severity
+- **Smart Marker Clustering** - Pins are automatically grouped when zoomed out to avoid clutter. Clusters show the count and are colored by max severity (green/yellow/red). Zooming in progressively reveals individual pins
 - **Category Filtering** - Filter incidents by type: Flood, Fire, Medical, Shelter, Food
 - **Search Functionality** - Search incidents by problem description, location, category, or severity zone
-- **Navigation System** - Get directions to incidents with blue route line via OSRM (free, no API key)
-- **GPS Location Tracking** - Real-time user location with accuracy circle
+- **Multi-Modal Real-Time Navigation** - Get directions to incidents via three transport modes:
+  - 🚗 **Car** — Fastest highway route (solid blue line)
+  - 🏍️ **Bike** — Local/cycling-friendly route (solid blue line)
+  - 🚶 **Walk** — Pedestrian pathway (dotted blue line)
+  - Each mode fetches a **genuinely different route** from separate OSRM profile servers with real-time distance, duration, and ETA
+- **Turn-by-Turn Navigation HUD** - During active navigation, a top HUD shows the current instruction, remaining distance, and ETA. Steps auto-advance as you approach each maneuver point
+- **Smart Pin Management** - During navigation, only the destination pin and critical emergency (severity ≥ 7) pins remain visible
+- **GPS Location Tracking** - Real-time user location with animated blue dot and accuracy circle
 - **Light/Dark Theme** - Auto-switches at 6 AM/PM, manual toggle available
 - **Ghost Heat Zones** - Visualize areas with historical incident patterns
+- **Mobile Optimized** - Fully responsive UI with media queries for phone, tablet, and desktop
 
 ---
 
@@ -24,11 +32,21 @@ A real-time geospatial heat map for NGO emergency response, built with Flutter W
 | Layer | Technology |
 |-------|------------|
 | Frontend | Flutter Web + Leaflet.js |
-| Map Tiles | Carto Light/Dark (free, no API key) |
-| Routing | OSRM via leaflet-routing-machine |
+| Map Tiles | Carto Voyager Light/Dark (free, no API key) |
+| Routing | FOSSGIS OSRM (separate car/bike/foot servers) |
+| Clustering | Leaflet.markercluster |
 | Backend | FastAPI (Python) |
 | Database | Firebase Firestore |
 | Hosting | Vercel |
+
+### Key Frontend Libraries
+
+| Library | Version | Purpose |
+|---------|---------|---------|
+| Leaflet.js | 1.9.4 | Interactive map rendering |
+| leaflet-heat | 0.2.0 | Ghost heat zone visualization |
+| leaflet-routing-machine | 3.2.12 | Routing control integration |
+| leaflet.markercluster | 1.5.3 | Smart pin grouping at zoom levels |
 
 ---
 
@@ -51,7 +69,7 @@ heatmap/
 │   │   ├── widgets/
 │   │   └── services/
 │   ├── web/
-│   │   └── index.html      # Main map logic (~960 lines)
+│   │   └── index.html      # Main map UI + logic
 │   ├── build/web/          # Production build output
 │   └── pubspec.yaml
 │
@@ -146,6 +164,40 @@ fuser -k 3000/tcp  # Kill frontend port
 
 ---
 
+## Navigation & Routing
+
+### Transport Modes
+
+| Mode | OSRM Server | Route Style | Optimized For |
+|------|-------------|-------------|---------------|
+| 🚗 Car | `routing.openstreetmap.de/routed-car` | Solid blue line | Highways, main roads |
+| 🏍️ Bike | `routing.openstreetmap.de/routed-bike` | Solid blue line | Cycling lanes, local roads |
+| 🚶 Walk | `routing.openstreetmap.de/routed-foot` | Dotted blue line | Sidewalks, pedestrian paths |
+
+Each mode uses a **separate OSRM server instance** with its own routing profile, ensuring genuinely different routes with accurate distance and time calculations.
+
+### Navigation Flow
+
+1. Click a pin → tap **"Directions →"**
+2. Route sheet appears with all 3 transport modes loading in parallel
+3. Each mode shows its **real distance** and **real ETA** from the OSRM API
+4. Select a mode → route draws on the map with appropriate style
+5. Press **"▶ Start"** → HUD appears with turn-by-turn guidance
+6. Non-essential pins hide; only destination + critical pins remain
+7. Press **"End"** to stop navigation and restore all pins
+
+### Marker Clustering
+
+When zoomed out, nearby pins are grouped into clusters:
+- **Green clusters** (1-3 severity avg) — Low-priority incidents
+- **Yellow clusters** (4-6 severity avg) — Medium-priority incidents
+- **Red clusters** (7+ severity avg) — Critical incidents
+- Cluster shows the **count** of grouped pins
+- Clicking a cluster zooms in to reveal sub-clusters or individual pins
+- At zoom level 16+, all pins are shown individually
+
+---
+
 ## API Endpoints
 
 | Method | Endpoint | Description |
@@ -216,8 +268,8 @@ curl -X POST http://127.0.0.1:8000/report \
 
 | Theme | Time | Tiles | Background |
 |-------|------|-------|------------|
-| Light | 6 AM - 6 PM | Carto Light | #f8fafc |
-| Dark | 6 PM - 6 AM | Carto Dark | #1e293b (slate) |
+| Light | 6 AM - 6 PM | Carto Voyager | #f8fafc |
+| Dark | 6 PM - 6 AM | Carto Voyager (dark filter) | #1e293b (slate) |
 
 **Manual Toggle:** Sun/Moon button at bottom-right of map
 
@@ -332,6 +384,12 @@ echo 'export PATH="$HOME/flutter/bin:$PATH"' >> ~/.bashrc
 1. Check browser console for errors
 2. Verify Leaflet.js CDN is accessible
 3. Try clearing browser cache
+
+### Routing Not Working
+
+1. FOSSGIS OSRM servers are free/public — may have occasional downtime
+2. Check browser console for CORS or network errors
+3. Fallback: the route sheet will show "N/A" for unavailable modes
 
 ---
 

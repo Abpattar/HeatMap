@@ -16,13 +16,48 @@
 
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css"/>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css"/>
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
   <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
 
   <style>
+    /* ─── Marker Cluster Styles (clean flat badges) ─────────────── */
+    .marker-cluster {
+      background: transparent !important;
+      border: none !important;
+    }
+    .marker-cluster div {
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      border-radius:50%;
+      font-family:'Poppins',sans-serif;
+      font-weight:700;
+      font-size:14px;
+      color:#fff;
+      box-shadow:0 2px 6px rgba(0,0,0,0.3);
+      border:2.5px solid rgba(255,255,255,0.95);
+      width:100% !important;
+      height:100% !important;
+      margin:0 !important;
+      line-height:1 !important;
+    }
+    .cluster-green div { background:#10b981; }
+    .cluster-yellow div { background:#f59e0b; }
+    .cluster-red div { background:#ef4444; }
+    /* Thin circle boundary when hovering a cluster */
+    .leaflet-cluster-anim .leaflet-marker-icon { transition:transform 0.3s ease; }
+    .marker-cluster-coverage {
+      stroke: rgba(100,100,100,0.35) !important;
+      stroke-width: 1.5 !important;
+      fill: rgba(100,100,100,0.06) !important;
+      stroke-dasharray: 4,4 !important;
+    }
+
     :root {
       --bg: #f8fafc;
       --card-bg: rgba(255,255,255,0.97);
@@ -951,7 +986,7 @@
         <div class="hud-eta-val" id="hud-eta">--</div>
       </div>
       <div class="hud-remaining" id="hud-remain">--</div>
-      <button class="hud-end-btn" onclick="endNav()" style="background:rgba(239,68,68,0.6);border-color:rgba(239,68,68,0.8)">✖ Cancel</button>
+      <button class="hud-end-btn" onclick="endNav()">End</button>
     </div>
   </div>
 
@@ -997,7 +1032,41 @@
     };
 
     // State
-    let markerLayer = L.layerGroup().addTo(map);
+    let markerLayer = L.markerClusterGroup({
+      maxClusterRadius: 45,
+      spiderfyOnMaxZoom: true,
+      showCoverageOnHover: true,
+      zoomToBoundsOnClick: true,
+      disableClusteringAtZoom: 17,
+      animate: true,
+      animateAddingMarkers: false,
+      polygonOptions: {
+        fillColor: 'rgba(100,100,100,0.06)',
+        color: 'rgba(100,100,100,0.35)',
+        weight: 1.5,
+        dashArray: '4,4',
+        fillOpacity: 0.06
+      },
+      iconCreateFunction: function(cluster) {
+        const children = cluster.getAllChildMarkers();
+        let maxSeverity = 0;
+        children.forEach(m => {
+          if (m._severity) maxSeverity = Math.max(maxSeverity, m._severity);
+        });
+        const count = cluster.getChildCount();
+        let colorClass = 'cluster-green';
+        let dim = 40;
+        if (maxSeverity >= 7) { colorClass = 'cluster-red'; }
+        else if (maxSeverity >= 4) { colorClass = 'cluster-yellow'; }
+        if (count >= 10) { dim = 48; }
+        else if (count >= 5) { dim = 44; }
+        return L.divIcon({
+          html: '<div>' + count + '</div>',
+          className: 'marker-cluster ' + colorClass,
+          iconSize: L.point(dim, dim)
+        });
+      }
+    }).addTo(map);
     let ghostLayer = L.heatLayer([],{radius:60,blur:45,maxZoom:18,minOpacity:0.3,gradient:{0.2:'rgba(100,100,255,0.3)',0.5:'rgba(150,100,255,0.4)',1:'rgba(200,50,255,0.5)'}}).addTo(map);
     let routeControl = null;
     let allReports = {};
@@ -1471,6 +1540,7 @@
         if (r.ghost_heat) ghosts.push([r.latitude,r.longitude,(r.intensity||0.5)*0.5]);
         const m = L.marker([r.latitude,r.longitude],{icon:ICONS[zone]||ICONS.green});
         m._reportId = id;
+        m._severity = r.severity || 0;
         // During navigation, don't bind popup on destination pin
         if (isNav && id === navDestId) {
           // No popup for destination during nav
