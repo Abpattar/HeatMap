@@ -1050,14 +1050,33 @@
       iconCreateFunction: function(cluster) {
         const children = cluster.getAllChildMarkers();
         let maxSeverity = 0;
+        let greenCount = 0, yellowCount = 0, redCount = 0;
         children.forEach(m => {
-          if (m._severity) maxSeverity = Math.max(maxSeverity, m._severity);
+          const sev = m._severity || 1;
+          maxSeverity = Math.max(maxSeverity, sev);
+          if (sev >= 7) redCount++;
+          else if (sev >= 4) yellowCount++;
+          else greenCount++;
         });
+        
         const count = cluster.getChildCount();
         let colorClass = 'cluster-green';
+        
+        // Base color on highest severity present
+        if (maxSeverity >= 7) colorClass = 'cluster-red';
+        else if (maxSeverity >= 4) colorClass = 'cluster-yellow';
+        
+        // Volume/Density based upgrades
+        // E.g., Many minor green issues coalesce into a medium yellow warning
+        if (colorClass === 'cluster-green' && count >= 7) {
+          colorClass = 'cluster-yellow';
+        }
+        // Many medium yellow issues coalesce into a critical red warning
+        if (colorClass === 'cluster-yellow' && count >= 8) {
+          colorClass = 'cluster-red';
+        }
+
         let dim = 40;
-        if (maxSeverity >= 7) { colorClass = 'cluster-red'; }
-        else if (maxSeverity >= 4) { colorClass = 'cluster-yellow'; }
         if (count >= 10) { dim = 48; }
         else if (count >= 5) { dim = 44; }
         return L.divIcon({

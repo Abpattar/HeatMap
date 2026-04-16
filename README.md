@@ -10,7 +10,7 @@ A real-time geospatial heat map for NGO emergency response, built with Flutter W
 
 - **Real-time Crisis Visualization** - Live markers for emergency incidents with severity-based colors (Red/Yellow/Green)
 - **Severity-Based Ripple Effects** - All markers have animated ripples; intensity varies by severity
-- **Smart Marker Clustering** - Pins are automatically grouped when zoomed out to avoid clutter. Clusters show the count and are colored by max severity (green/yellow/red). Zooming in progressively reveals individual pins
+- **Smart Marker Clustering** - Pins automatically group when zoomed out. Clusters are colored dynamically by severity and density: colors upgrade (e.g. 7+ Green become Yellow, 8+ Yellow become Red) when areas are highly concentrated. Zooming reveals individual pins.
 - **Category Filtering** - Filter incidents by type: Flood, Fire, Medical, Shelter, Food
 - **Search Functionality** - Search incidents by problem description, location, category, or severity zone
 - **Multi-Modal Real-Time Navigation** - Get directions to incidents via three transport modes:
