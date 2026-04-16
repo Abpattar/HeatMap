@@ -573,41 +573,7 @@
       opacity:0.3;
     }
 
-    /* ─── Directions Preview ─────────────────────────────────────── */
-    .sheet-directions {
-      max-height:120px;
-      overflow-y:auto;
-      margin-bottom:14px;
-      border:1px solid var(--border);
-      border-radius:var(--radius-sm);
-      background:rgba(0,0,0,0.02);
-    }
-    [data-theme="dark"] .sheet-directions {
-      background:rgba(255,255,255,0.03);
-    }
-    .dir-step {
-      display:flex;
-      align-items:flex-start;
-      gap:10px;
-      padding:8px 12px;
-      border-bottom:1px solid var(--border);
-      font-size:12px;
-      color:var(--text);
-    }
-    .dir-step:last-child { border-bottom:none; }
-    .dir-arrow {
-      font-size:16px;
-      flex-shrink:0;
-      width:22px;
-      text-align:center;
-    }
-    .dir-text { flex:1; line-height:1.4; }
-    .dir-dist {
-      font-size:10px;
-      color:var(--text-muted);
-      flex-shrink:0;
-      white-space:nowrap;
-    }
+    /* Directions CSS removed from sheet — directions shown only during navigation HUD */
 
     .sheet-btns { display:flex; gap:12px; }
     .sheet-btn {
@@ -639,7 +605,7 @@
       top:0; left:0; right:0;
       z-index:950;
       background:linear-gradient(135deg,#1d4ed8,#0ea5e9);
-      padding:16px 20px 20px;
+      padding:16px 20px 12px;
       padding-top:max(env(safe-area-inset-top),16px);
       box-shadow:0 4px 24px rgba(14,165,233,0.4);
     }
@@ -656,12 +622,13 @@
     .hud-info { flex:1; }
     .hud-distance { font-size:28px; font-weight:800; color:white; }
     .hud-instruction { font-size:14px; color:rgba(255,255,255,0.85); margin-top:2px; }
+    /* next-step removed — simplified HUD */
     .hud-bottom {
       display:flex;
       align-items:center;
       justify-content:space-between;
-      margin-top:14px;
-      padding-top:12px;
+      margin-top:10px;
+      padding-top:10px;
       border-top:1px solid rgba(255,255,255,0.15);
     }
     .hud-eta-label { font-size:11px; color:rgba(255,255,255,0.7); }
@@ -923,43 +890,46 @@
     <div class="sheet-handle"></div>
     <div class="sheet-title">Route Ready</div>
     <div class="sheet-dest" id="sheet-dest">Destination</div>
-    <div class="sheet-meta">
-      <div class="sheet-meta-item">
-        <div class="sheet-meta-val" id="sheet-eta">--</div>
-        <div class="sheet-meta-label">ETA</div>
-      </div>
-      <div class="sheet-meta-item">
-        <div class="sheet-meta-val" id="sheet-dist">--</div>
-        <div class="sheet-meta-label">Distance</div>
-      </div>
-    </div>
     <div class="transport-modes" id="transport-modes">
       <div class="transport-mode active" data-mode="driving" onclick="selectTransport('driving')">
         <span class="mode-icon">🚗</span>
         <span>Car</span>
         <div class="mode-info">
-          <span class="mode-eta" id="eta-driving">--</span>
-          <span class="mode-dist" id="dist-driving">--</span>
+          <span class="mode-eta" id="eta-driving">...</span>
+          <span class="mode-dist" id="dist-driving"></span>
         </div>
       </div>
       <div class="transport-mode" data-mode="bike" onclick="selectTransport('bike')">
         <span class="mode-icon">🏍️</span>
         <span>Bike</span>
         <div class="mode-info">
-          <span class="mode-eta" id="eta-bike">--</span>
-          <span class="mode-dist" id="dist-bike">--</span>
+          <span class="mode-eta" id="eta-bike">...</span>
+          <span class="mode-dist" id="dist-bike"></span>
         </div>
       </div>
       <div class="transport-mode" data-mode="foot" onclick="selectTransport('foot')">
         <span class="mode-icon">🚶</span>
         <span>Walk</span>
         <div class="mode-info">
-          <span class="mode-eta" id="eta-foot">--</span>
-          <span class="mode-dist" id="dist-foot">--</span>
+          <span class="mode-eta" id="eta-foot">...</span>
+          <span class="mode-dist" id="dist-foot"></span>
         </div>
       </div>
     </div>
-    <div class="sheet-directions" id="sheet-directions"></div>
+    <div class="sheet-meta">
+      <div class="sheet-meta-item">
+        <div class="sheet-meta-val" id="sheet-dist">--</div>
+        <div class="sheet-meta-label">Distance</div>
+      </div>
+      <div class="sheet-meta-item">
+        <div class="sheet-meta-val" id="sheet-eta">--</div>
+        <div class="sheet-meta-label">ETA</div>
+      </div>
+      <div class="sheet-meta-item">
+        <div class="sheet-meta-val" id="sheet-dur">--</div>
+        <div class="sheet-meta-label">Duration</div>
+      </div>
+    </div>
     <div class="sheet-btns">
       <button class="sheet-btn sheet-btn-cancel" onclick="cancelRoute()">Cancel</button>
       <button class="sheet-btn sheet-btn-start" onclick="startNav()">▶ Start</button>
@@ -981,7 +951,7 @@
         <div class="hud-eta-val" id="hud-eta">--</div>
       </div>
       <div class="hud-remaining" id="hud-remain">--</div>
-      <button class="hud-end-btn" onclick="endNav()">End</button>
+      <button class="hud-end-btn" onclick="endNav()" style="background:rgba(239,68,68,0.6);border-color:rgba(239,68,68,0.8)">✖ Cancel</button>
     </div>
   </div>
 
@@ -1228,9 +1198,12 @@
     // Directions
     let pendingDirProb = '';
     let pendingDirId = '';
-    let modeRouteCache = {}; // cache real OSRM results per mode
+    let modeRouteCache = {};
+    let navStepIndex = 0;
 
     window.getDir = async function(id, lat, lng, prob) {
+      // If already navigating to this point, ignore
+      if (isNav && navDestId === id) return;
       try {
         await updateDoc(doc(db,'heatmap_reports',id),{people_accepted:increment(1),task_status:'in_progress'});
       } catch(e) {}
@@ -1246,24 +1219,25 @@
         m.classList.add('loading');
       });
       document.querySelector('.transport-mode[data-mode="driving"]').classList.add('active');
-      document.getElementById('sheet-directions').innerHTML = '';
 
-      // Fetch real routes for all 3 modes in parallel
+      // Fetch real routes from SEPARATE OSRM servers for genuinely different paths
       const from = userLoc || [12.9716,77.5946];
-      fetchRealRoute(from, [lat,lng], 'driving', prob, true);
-      fetchRealRoute(from, [lat,lng], 'bike', prob, false);
-      fetchRealRoute(from, [lat,lng], 'foot', prob, false);
+      fetchRealRoute(from, [lat,lng], 'driving', 'https://routing.openstreetmap.de/routed-car', prob, true);
+      fetchRealRoute(from, [lat,lng], 'bike', 'https://routing.openstreetmap.de/routed-bike', prob, false);
+      fetchRealRoute(from, [lat,lng], 'foot', 'https://routing.openstreetmap.de/routed-foot', prob, false);
     };
 
-    async function fetchRealRoute(from, to, profile, prob, isActive) {
-      const osrmProfile = profile === 'bike' ? 'bike' : profile === 'foot' ? 'foot' : 'driving';
-      const url = `https://router.project-osrm.org/route/v1/${osrmProfile}/${from[1]},${from[0]};${to[1]},${to[0]}?overview=full&geometries=geojson&steps=true`;
+    async function fetchRealRoute(from, to, modeKey, serverUrl, prob, isActive) {
+      // Use FOSSGIS OSRM servers — each has a DIFFERENT profile loaded
+      // Car: routed-car, Bike: routed-bike, Foot: routed-foot
+      const url = `${serverUrl}/route/v1/driving/${from[1]},${from[0]};${to[1]},${to[0]}?overview=full&geometries=geojson&steps=true`;
       try {
         const resp = await fetch(url);
         const data = await resp.json();
         if (data.code !== 'Ok' || !data.routes || !data.routes[0]) {
-          const el = document.getElementById('eta-'+profile);
+          const el = document.getElementById('eta-'+modeKey);
           if (el) el.textContent = 'N/A';
+          document.querySelector(`.transport-mode[data-mode="${modeKey}"]`).classList.remove('loading');
           return;
         }
         const route = data.routes[0];
@@ -1282,7 +1256,13 @@
                 if (s.maneuver && s.distance > 5) {
                   const arrow = getManeuverArrow(s.maneuver.type, s.maneuver.modifier);
                   const stepDist = s.distance > 1000 ? (s.distance/1000).toFixed(1)+' km' : Math.round(s.distance)+' m';
-                  steps.push({arrow, text: s.name || formatManeuver(s.maneuver.type, s.maneuver.modifier), dist: stepDist});
+                  const stepName = s.name || formatManeuver(s.maneuver.type, s.maneuver.modifier);
+                  steps.push({
+                    arrow,
+                    text: stepName,
+                    dist: stepDist,
+                    location: s.maneuver.location
+                  });
                 }
               });
             }
@@ -1290,7 +1270,7 @@
         }
 
         // Cache the result
-        modeRouteCache[profile] = {
+        modeRouteCache[modeKey] = {
           distance: distKm,
           duration: durSec,
           durText,
@@ -1299,21 +1279,22 @@
           geometry: route.geometry
         };
 
-        // Update mode button
-        const etaEl = document.getElementById('eta-'+profile);
-        const distEl = document.getElementById('dist-'+profile);
+        // Update mode button with real data
+        const etaEl = document.getElementById('eta-'+modeKey);
+        const distEl = document.getElementById('dist-'+modeKey);
         if (etaEl) etaEl.textContent = durText;
         if (distEl) distEl.textContent = distKm+' km';
-        document.querySelector(`.transport-mode[data-mode="${profile}"]`).classList.remove('loading');
+        document.querySelector(`.transport-mode[data-mode="${modeKey}"]`).classList.remove('loading');
 
         // If this is the active mode, show it on map
         if (isActive) {
-          showRouteOnMap(profile, prob);
+          showRouteOnMap(modeKey, prob);
         }
       } catch(e) {
-        console.error('Route fetch error for '+profile, e);
-        const el = document.getElementById('eta-'+profile);
-        if (el) el.textContent = 'Error';
+        console.error('Route fetch error for '+modeKey, e);
+        const el = document.getElementById('eta-'+modeKey);
+        if (el) el.textContent = 'N/A';
+        document.querySelector(`.transport-mode[data-mode="${modeKey}"]`).classList.remove('loading');
       }
     }
 
@@ -1321,41 +1302,43 @@
       if (type === 'arrive') return '🏁';
       if (type === 'depart') return '🚩';
       if (!modifier) return '⬆️';
-      if (modifier.includes('left') && modifier.includes('slight')) return '↖️';
-      if (modifier.includes('right') && modifier.includes('slight')) return '↗️';
+      if (modifier.includes('slight') && modifier.includes('left')) return '↖️';
+      if (modifier.includes('slight') && modifier.includes('right')) return '↗️';
       if (modifier.includes('sharp') && modifier.includes('left')) return '↩️';
       if (modifier.includes('sharp') && modifier.includes('right')) return '↪️';
       if (modifier.includes('left')) return '⬅️';
       if (modifier.includes('right')) return '➡️';
       if (modifier.includes('uturn')) return '↩️';
+      if (modifier.includes('straight')) return '⬆️';
       return '⬆️';
     }
 
     function formatManeuver(type, modifier) {
-      if (type === 'depart') return 'Start';
+      if (type === 'depart') return 'Head straight';
       if (type === 'arrive') return 'Arrive at destination';
       if (type === 'roundabout') return 'Take roundabout';
+      if (type === 'new name') return 'Continue';
       const dir = modifier ? modifier.replace(/-/g,' ') : '';
       if (type === 'turn') return `Turn ${dir}`;
       if (type === 'fork') return `Take the ${dir} fork`;
       if (type === 'merge') return `Merge ${dir}`;
       if (type === 'end of road') return `At end of road, turn ${dir}`;
-      return `Continue ${dir}`.trim();
+      return `Continue ${dir}`.trim() || 'Continue';
     }
 
-    function showRouteOnMap(profile, prob) {
-      const cached = modeRouteCache[profile];
+    function showRouteOnMap(modeKey, prob) {
+      const cached = modeRouteCache[modeKey];
       if (!cached) return;
 
       if (routeControl) { map.removeControl(routeControl); routeControl = null; }
 
-      // Draw the route polyline directly from OSRM geometry
+      // Draw the route polyline from OSRM geometry
       const coords = cached.geometry.coordinates.map(c => [c[1],c[0]]);
-      const lineStyle = profile === 'foot'
+      const lineStyle = modeKey === 'foot'
         ? {color:'#0ea5e9', weight:4, opacity:0.85, dashArray:'8, 12', lineCap:'round'}
         : {color:'#0ea5e9', weight:5, opacity:0.9};
 
-      // Remove old polyline if any
+      // Remove old polyline
       if (window._routePolyline) { map.removeLayer(window._routePolyline); window._routePolyline = null; }
       window._routePolyline = L.polyline(coords, lineStyle).addTo(map);
       map.fitBounds(window._routePolyline.getBounds(), {padding:[50,50]});
@@ -1364,29 +1347,14 @@
       document.getElementById('sheet-dest').textContent = prob;
       document.getElementById('sheet-eta').textContent = cached.eta;
       document.getElementById('sheet-dist').textContent = cached.distance + ' km';
+      document.getElementById('sheet-dur').textContent = cached.durText;
       document.getElementById('route-sheet').style.display = 'block';
 
-      // Show directions
-      const dirEl = document.getElementById('sheet-directions');
-      if (cached.steps.length > 0) {
-        dirEl.innerHTML = cached.steps.map(s =>
-          `<div class="dir-step">
-            <span class="dir-arrow">${s.arrow}</span>
-            <span class="dir-text">${s.text || 'Continue'}</span>
-            <span class="dir-dist">${s.dist}</span>
-          </div>`
-        ).join('');
-      } else {
-        dirEl.innerHTML = '<div class="dir-step"><span class="dir-text" style="color:var(--text-muted)">No turn directions available</span></div>';
-      }
-
-      // Store steps for HUD
-      routeSteps = cached.steps.map(s => ({text: `${s.arrow} ${s.text}`, distance: s.dist}));
+      // Store steps for HUD navigation
+      routeSteps = cached.steps;
 
       map.closePopup();
     }
-
-    // old buildRoute not needed, replaced by fetchRealRoute + showRouteOnMap
 
     window.selectTransport = function(mode) {
       activeTransport = mode;
@@ -1397,7 +1365,10 @@
           showRouteOnMap(mode, pendingDirProb);
         } else {
           const from = userLoc || [12.9716,77.5946];
-          fetchRealRoute(from, [destLat,destLng], mode, pendingDirProb, true);
+          const serverUrl = mode === 'bike' ? 'https://routing.openstreetmap.de/routed-bike'
+            : mode === 'foot' ? 'https://routing.openstreetmap.de/routed-foot'
+            : 'https://routing.openstreetmap.de/routed-car';
+          fetchRealRoute(from, [destLat,destLng], mode, serverUrl, pendingDirProb, true);
         }
       }
     };
@@ -1413,8 +1384,9 @@
     };
 
     window.startNav = function() {
-      if (!routeControl) return;
+      if (!window._routePolyline && !routeControl) return;
       isNav = true;
+      navStepIndex = 0;
       document.body.classList.add('navigating');
       document.getElementById('route-sheet').style.display = 'none';
       document.getElementById('nav-hud').style.display = 'block';
@@ -1422,21 +1394,38 @@
       if (accCircle) { map.removeLayer(accCircle); accCircle = null; }
       navArrow = L.marker(userLoc||[12.9716,77.5946],{icon:navIcon(),zIndexOffset:2000}).addTo(map);
       map.setView(userLoc||[12.9716,77.5946],17);
-      render(); // Re-render to hide non-essential pins
+      render();
       updateHUD();
     };
 
     function updateHUD() {
       if (!destLat) return;
       const d = map.distance(userLoc,[destLat,destLng]);
-      document.getElementById('hud-dist').textContent = d>1000?`${(d/1000).toFixed(1)} km`:`${Math.round(d)} m`;
-      const step = routeSteps[0] || {};
-      const t = (step.type||'').toLowerCase();
-      const arrow = t.includes('left')?'↰':t.includes('right')?'↱':t.includes('arrive')?'🏁':'⬆️';
-      document.getElementById('hud-arrow').textContent = arrow;
-      document.getElementById('hud-instr').textContent = step.text || 'Continue to destination';
-      const eta = new Date(Date.now()+(d/8.3)*1000).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
-      document.getElementById('hud-eta').textContent = eta;
+      
+      // Show remaining distance to destination
+      document.getElementById('hud-dist').textContent = d > 1000 ? `${(d/1000).toFixed(1)} km` : `${Math.round(d)} m`;
+
+      // Simple instruction
+      const step = routeSteps[navStepIndex] || {};
+      document.getElementById('hud-arrow').textContent = step.arrow || '⬆️';
+      document.getElementById('hud-instr').textContent = step.text ? `${step.text}` : 'Continue to destination';
+
+      // Advance step if close enough
+      if (step.location && userLoc) {
+        const distToStep = map.distance(userLoc, [step.location[1], step.location[0]]);
+        if (distToStep < 30 && navStepIndex < routeSteps.length - 1) {
+          navStepIndex++;
+        }
+      }
+
+      // ETA & remaining
+      const cached = modeRouteCache[activeTransport];
+      if (cached) {
+        const progress = 1 - (d / (cached.distance * 1000));
+        const remainSec = cached.duration * (1 - Math.max(0, Math.min(1, progress)));
+        const eta = new Date(Date.now() + remainSec * 1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+        document.getElementById('hud-eta').textContent = eta;
+      }
       document.getElementById('hud-remain').textContent = `${(d/1000).toFixed(1)} km left`;
     }
 
@@ -1447,18 +1436,21 @@
 
     window.endNav = function() {
       isNav = false;
+      navStepIndex = 0;
       document.body.classList.remove('navigating');
       document.getElementById('nav-hud').style.display = 'none';
       if (navArrow) { map.removeLayer(navArrow); navArrow = null; }
       if (routeControl) { map.removeControl(routeControl); routeControl = null; }
+      if (window._routePolyline) { map.removeLayer(window._routePolyline); window._routePolyline = null; }
       destLat = destLng = null;
       navDestId = null;
+      modeRouteCache = {};
       if (userLoc) {
         userMarker = L.marker(userLoc,{icon:userIcon,zIndexOffset:1000}).addTo(map);
         accCircle = L.circle(userLoc,{radius:20,color:'#3b82f6',fillOpacity:0.08,weight:1}).addTo(map);
         map.setView(userLoc,14);
       }
-      render(); // Restore all pins
+      render();
     };
 
     // Render
@@ -1479,7 +1471,12 @@
         if (r.ghost_heat) ghosts.push([r.latitude,r.longitude,(r.intensity||0.5)*0.5]);
         const m = L.marker([r.latitude,r.longitude],{icon:ICONS[zone]||ICONS.green});
         m._reportId = id;
-        m.bindPopup(popup(r,id),{maxWidth:300,className:'aura-popup'});
+        // During navigation, don't bind popup on destination pin
+        if (isNav && id === navDestId) {
+          // No popup for destination during nav
+        } else {
+          m.bindPopup(popup(r,id),{maxWidth:300,className:'aura-popup'});
+        }
         markerLayer.addLayer(m);
       });
       ghostLayer.setLatLngs(isNav ? [] : ghosts); // Hide ghost heat during nav
