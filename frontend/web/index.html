@@ -16,13 +16,11 @@
   <link rel="manifest" href="manifest.json">
 
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
-  <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
   <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
 
   <style>
@@ -134,7 +132,6 @@
       background: #1e293b;
     }
 
-    /* Dark mode map tiles */
     [data-theme="dark"] .dark-map-tiles {
       filter: invert(1) hue-rotate(180deg) brightness(0.95) contrast(0.9);
     }
@@ -758,8 +755,6 @@
       margin-bottom: 14px;
     }
 
-    .sheet-meta-item {}
-
     .sheet-meta-val {
       font-size: 24px;
       font-weight: 700;
@@ -834,8 +829,6 @@
     .transport-mode.loading .mode-dist {
       opacity: 0.3;
     }
-
-    /* Directions CSS removed from sheet — directions shown only during navigation HUD */
 
     .sheet-btns {
       display: flex;
@@ -916,7 +909,6 @@
       margin-top: 2px;
     }
 
-    /* next-step removed — simplified HUD */
     .hud-bottom {
       display: flex;
       align-items: center;
@@ -987,10 +979,6 @@
     /* Hide zoom controls during navigation too */
     body.navigating .leaflet-control-zoom {
       display: none;
-    }
-
-    .leaflet-routing-container {
-      display: none !important;
     }
 
     /* ────────────────────────────────────────────────────────────────── */
@@ -1493,10 +1481,11 @@
       });
       const db = getFirestore(fb);
 
-      // Theme - Using Carto Voyager for dark mode (brighter labels)
+      const TILE_URL = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
+      const TILE_OPTS = { attribution: '© OSM © CARTO', subdomains: 'abcd', maxZoom: 19 };
       const TILES = {
-        light: L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { attribution: '© OSM © CARTO', subdomains: 'abcd', maxZoom: 19 }),
-        dark: L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { attribution: '© OSM © CARTO', subdomains: 'abcd', maxZoom: 19, className: 'dark-map-tiles' })
+        light: L.tileLayer(TILE_URL, TILE_OPTS),
+        dark: L.tileLayer(TILE_URL, { ...TILE_OPTS, className: 'dark-map-tiles' })
       };
       let theme = (new Date().getHours() >= 18 || new Date().getHours() < 6) ? 'dark' : 'light';
 
@@ -1568,7 +1557,6 @@
         }
       }).addTo(map);
       let ghostLayer = L.heatLayer([], { radius: 60, blur: 45, maxZoom: 18, minOpacity: 0.3, gradient: { 0.2: 'rgba(100,100,255,0.3)', 0.5: 'rgba(150,100,255,0.4)', 1: 'rgba(200,50,255,0.5)' } }).addTo(map);
-      let routeControl = null;
       let allReports = {};
       let activeFilter = 'all';
       let userLoc = null;
@@ -1581,9 +1569,8 @@
       let navDestId = null;
       let activeTransport = 'driving';
 
-      // Icons with severity-based ripple effects
+      // Icons
       function makeIcon(color, zone) {
-        // Ripple intensity: red = strong, yellow = medium, green = subtle
         const rippleSize = zone === 'red' ? 60 : zone === 'yellow' ? 45 : 30;
         const rippleOpacity = zone === 'red' ? 0.5 : zone === 'yellow' ? 0.35 : 0.2;
         const animDuration = zone === 'red' ? '1.5s' : zone === 'yellow' ? '2s' : '2.5s';
@@ -1789,7 +1776,6 @@
         });
         document.querySelector('.transport-mode[data-mode="driving"]').classList.add('active');
 
-        // Fetch real routes from SEPARATE OSRM servers for genuinely different paths
         const from = userLoc || [12.9716, 77.5946];
         fetchRealRoute(from, [lat, lng], 'driving', 'https://routing.openstreetmap.de/routed-car', prob, true);
         fetchRealRoute(from, [lat, lng], 'bike', 'https://routing.openstreetmap.de/routed-bike', prob, false);
@@ -1797,9 +1783,8 @@
       };
 
       async function fetchRealRoute(from, to, modeKey, serverUrl, prob, isActive) {
-        // Use FOSSGIS OSRM servers — each has a DIFFERENT profile loaded
-        // Car: routed-car, Bike: routed-bike, Foot: routed-foot
-        const url = `${serverUrl}/route/v1/driving/${from[1]},${from[0]};${to[1]},${to[0]}?overview=full&geometries=geojson&steps=true`;
+        const osrmProfile = modeKey === 'bike' ? 'cycling' : modeKey === 'foot' ? 'foot' : 'driving';
+        const url = `${serverUrl}/route/v1/${osrmProfile}/${from[1]},${from[0]};${to[1]},${to[0]}?overview=full&geometries=geojson&steps=true&alternatives=false`;
         try {
           const resp = await fetch(url);
           const data = await resp.json();
@@ -1838,7 +1823,6 @@
             });
           }
 
-          // Cache the result
           modeRouteCache[modeKey] = {
             distance: distKm,
             duration: durSec,
@@ -1848,19 +1832,15 @@
             geometry: route.geometry
           };
 
-          // Update mode button with real data
           const etaEl = document.getElementById('eta-' + modeKey);
           const distEl = document.getElementById('dist-' + modeKey);
           if (etaEl) etaEl.textContent = durText;
           if (distEl) distEl.textContent = distKm + ' km';
           document.querySelector(`.transport-mode[data-mode="${modeKey}"]`).classList.remove('loading');
 
-          // If this is the active mode, show it on map
-          if (isActive) {
-            showRouteOnMap(modeKey, prob);
-          }
+          if (isActive) showRouteOnMap(modeKey, prob);
         } catch (e) {
-          console.error('Route fetch error for ' + modeKey, e);
+          console.error('Route fetch error:', modeKey, e);
           const el = document.getElementById('eta-' + modeKey);
           if (el) el.textContent = 'N/A';
           document.querySelector(`.transport-mode[data-mode="${modeKey}"]`).classList.remove('loading');
@@ -1898,30 +1878,19 @@
       function showRouteOnMap(modeKey, prob) {
         const cached = modeRouteCache[modeKey];
         if (!cached) return;
-
-        if (routeControl) { map.removeControl(routeControl); routeControl = null; }
-
-        // Draw the route polyline from OSRM geometry
         const coords = cached.geometry.coordinates.map(c => [c[1], c[0]]);
         const lineStyle = modeKey === 'foot'
           ? { color: '#0ea5e9', weight: 4, opacity: 0.85, dashArray: '8, 12', lineCap: 'round' }
           : { color: '#0ea5e9', weight: 5, opacity: 0.9 };
-
-        // Remove old polyline
         if (window._routePolyline) { map.removeLayer(window._routePolyline); window._routePolyline = null; }
         window._routePolyline = L.polyline(coords, lineStyle).addTo(map);
         map.fitBounds(window._routePolyline.getBounds(), { padding: [50, 50] });
-
-        // Update sheet info
         document.getElementById('sheet-dest').textContent = prob;
         document.getElementById('sheet-eta').textContent = cached.eta;
         document.getElementById('sheet-dist').textContent = cached.distance + ' km';
         document.getElementById('sheet-dur').textContent = cached.durText;
         document.getElementById('route-sheet').style.display = 'block';
-
-        // Store steps for HUD navigation
         routeSteps = cached.steps;
-
         map.closePopup();
       }
 
@@ -1944,16 +1913,15 @@
 
       window.cancelRoute = function () {
         document.getElementById('route-sheet').style.display = 'none';
-        if (routeControl) { map.removeControl(routeControl); routeControl = null; }
         if (window._routePolyline) { map.removeLayer(window._routePolyline); window._routePolyline = null; }
         destLat = destLng = null;
         navDestId = null;
         modeRouteCache = {};
-        render(); // Restore all pins
+        render();
       };
 
       window.startNav = function () {
-        if (!window._routePolyline && !routeControl) return;
+        if (!window._routePolyline) return;
         isNav = true;
         navStepIndex = 0;
         document.body.classList.add('navigating');
@@ -1970,38 +1938,24 @@
       function updateHUD() {
         if (!destLat) return;
         const d = map.distance(userLoc, [destLat, destLng]);
-
-        // Show remaining distance to destination
         document.getElementById('hud-dist').textContent = d > 1000 ? `${(d / 1000).toFixed(1)} km` : `${Math.round(d)} m`;
-
-        // Simple instruction
         const step = routeSteps[navStepIndex] || {};
         document.getElementById('hud-arrow').textContent = step.arrow || '⬆️';
-        document.getElementById('hud-instr').textContent = step.text ? `${step.text}` : 'Continue to destination';
-
-        // Advance step if close enough
+        document.getElementById('hud-instr').textContent = step.text || 'Continue to destination';
         if (step.location && userLoc) {
           const distToStep = map.distance(userLoc, [step.location[1], step.location[0]]);
-          if (distToStep < 30 && navStepIndex < routeSteps.length - 1) {
-            navStepIndex++;
-          }
+          if (distToStep < 30 && navStepIndex < routeSteps.length - 1) navStepIndex++;
         }
-
-        // ETA & remaining
         const cached = modeRouteCache[activeTransport];
         if (cached) {
           const progress = 1 - (d / (cached.distance * 1000));
           const remainSec = cached.duration * (1 - Math.max(0, Math.min(1, progress)));
-          const eta = new Date(Date.now() + remainSec * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-          document.getElementById('hud-eta').textContent = eta;
+          document.getElementById('hud-eta').textContent = new Date(Date.now() + remainSec * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         }
         document.getElementById('hud-remain').textContent = `${(d / 1000).toFixed(1)} km left`;
       }
 
-      function arrive() {
-        endNav();
-        toast('🏁 You have arrived!');
-      }
+      function arrive() { endNav(); toast('🏁 You have arrived!'); }
 
       window.endNav = function () {
         isNav = false;
@@ -2009,7 +1963,6 @@
         document.body.classList.remove('navigating');
         document.getElementById('nav-hud').style.display = 'none';
         if (navArrow) { map.removeLayer(navArrow); navArrow = null; }
-        if (routeControl) { map.removeControl(routeControl); routeControl = null; }
         if (window._routePolyline) { map.removeLayer(window._routePolyline); window._routePolyline = null; }
         destLat = destLng = null;
         navDestId = null;
@@ -2022,34 +1975,27 @@
         render();
       };
 
-      // Render
       function render() {
         markerLayer.clearLayers();
         const ghosts = [];
         Object.entries(allReports).forEach(([id, r]) => {
           if (activeFilter !== 'all' && r.category !== activeFilter) return;
           const zone = r.zone || 'green';
-
-          // During navigation: only show destination pin + critical red-zone pins
           if (isNav) {
             const isDestination = (id === navDestId);
             const isCritical = (zone === 'red' && r.severity >= 7);
             if (!isDestination && !isCritical) return;
           }
-
           if (r.ghost_heat) ghosts.push([r.latitude, r.longitude, (r.intensity || 0.5) * 0.5]);
           const m = L.marker([r.latitude, r.longitude], { icon: ICONS[zone] || ICONS.green });
           m._reportId = id;
           m._severity = r.severity || 0;
-          // During navigation, don't bind popup on destination pin
-          if (isNav && id === navDestId) {
-            // No popup for destination during nav
-          } else {
+          if (!(isNav && id === navDestId)) {
             m.bindPopup(popup(r, id), { maxWidth: 300, className: 'aura-popup' });
           }
           markerLayer.addLayer(m);
         });
-        ghostLayer.setLatLngs(isNav ? [] : ghosts); // Hide ghost heat during nav
+        ghostLayer.setLatLngs(isNav ? [] : ghosts);
         updateCounts();
       }
 
@@ -2062,7 +2008,6 @@
         });
       }
 
-      // Firestore
       const q = query(collection(db, 'heatmap_reports'), where('resolved', '==', false));
       onSnapshot(q, snap => {
         snap.docChanges().forEach(ch => {
@@ -2071,8 +2016,8 @@
         });
         render();
       });
+      window.allReports = allReports; // Expose for external integration
 
-      // Stats for Flutter
       function stats() {
         const r = Object.values(allReports);
         const s = JSON.stringify({ total: r.length, red: r.filter(x => x.zone === 'red').length, yellow: r.filter(x => x.zone === 'yellow').length, green: r.filter(x => x.zone === 'green').length, ghost: r.filter(x => x.ghost_heat).length });
@@ -2081,10 +2026,10 @@
       }
       setInterval(stats, 5000);
 
-      // Expose
       window.setHeatMapFilter = window.selectCategory;
       window.centerMap = (lat, lng, z) => map.setView([lat, lng], z || 14);
       window.toggleGhostHeat = show => { ghostLayer.setLatLngs(show ? Object.values(allReports).filter(r => r.ghost_heat).map(r => [r.latitude, r.longitude, 0.5]) : []); };
+      window.getMap = () => map;
 
       map.on('zoomend', render);
       window.addEventListener('resize', () => map.invalidateSize());

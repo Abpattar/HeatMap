@@ -4,9 +4,12 @@ import 'package:web/web.dart' as web;
 import '../widgets/stats_panel.dart';
 import '../widgets/filter_bar.dart';
 
-// ── JS interop — calls window.setHeatMapFilter() defined in index.html ──
+// ── JS interop — calls window functions defined in index.html ──
 @JS('setHeatMapFilter')
 external void _jsSetFilter(JSString category);
+
+@JS('toggleGhostHeat')
+external void _jsToggleGhostHeat(bool show);
 
 class HeatMapScreen extends StatefulWidget {
   const HeatMapScreen({super.key});
@@ -78,7 +81,9 @@ class _HeatMapScreenState extends State<HeatMapScreen> {
   }
 
   void _toggleGhostHeat() {
-    setState(() => _showGhostHeat = !_showGhostHeat);
+    final newVal = !_showGhostHeat;
+    setState(() => _showGhostHeat = newVal);
+    try { _jsToggleGhostHeat(newVal); } catch (_) {}
   }
 
   @override
