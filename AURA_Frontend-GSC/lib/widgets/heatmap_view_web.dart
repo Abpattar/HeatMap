@@ -8,6 +8,8 @@ import 'dart:ui_web' as ui_web;
 import 'package:flutter/material.dart';
 
 /// Web implementation — embeds the HeatMap frontend in an iframe via HtmlElementView.
+/// In embedded mode the map hides its own search/filter/FAB UI so Flutter
+/// is the single source of truth for those controls.
 class HeatMapView extends StatefulWidget {
   final Function(String action, Map<String, dynamic> data)? onMessage;
 
@@ -32,17 +34,20 @@ class HeatMapViewState extends State<HeatMapView> {
   void _registerViewFactory() {
     if (_registered) return;
     _registered = true;
-    ui_web.platformViewRegistry.registerViewFactory('heatmap-iframe',
-        (int viewId) {
-      _iframe = html.IFrameElement()
-        ..src = 'heatmap.html'
-        ..style.border = 'none'
-        ..style.width = '100%'
-        ..style.height = '100%'
-        ..allow = 'geolocation'
-        ..setAttribute('allowfullscreen', 'true');
-      return _iframe!;
-    });
+    ui_web.platformViewRegistry.registerViewFactory(
+      'heatmap-iframe',
+      (int viewId) {
+        _iframe = html.IFrameElement()
+          // embedded=true tells heatmap.html to hide its own search/filter UI
+          ..src = 'heatmap.html?embedded=true'
+          ..style.border = 'none'
+          ..style.width = '100%'
+          ..style.height = '100%'
+          ..allow = 'geolocation'
+          ..setAttribute('allowfullscreen', 'true');
+        return _iframe!;
+      },
+    );
   }
 
   void _listenForMessages() {
@@ -53,7 +58,7 @@ class HeatMapViewState extends State<HeatMapView> {
           if (data is Map<String, dynamic> && data.containsKey('action')) {
             widget.onMessage?.call(
               data['action'] as String,
-              data,
+              Map<String, dynamic>.from(data),
             );
           }
         }
@@ -63,29 +68,37 @@ class HeatMapViewState extends State<HeatMapView> {
     });
   }
 
-  /// Highlight a specific report on the map by ID.
-  void highlightReport(String id) {
-    _iframe?.contentWindow?.postMessage(
-      jsonEncode({'action': 'goToReport', 'id': id}),
-      '*',
-    );
+  // ── Low-level send ────────────────────────────────────────────────────────
+
+  void _send(Map<String, dynamic> payload) {
+    _iframe?.contentWindow?.postMessage(jsonEncode(payload), '*');
   }
 
-  /// Filter map pins by category.
-  void filterByCategory(String category) {
-    _iframe?.contentWindow?.postMessage(
-      jsonEncode({'action': 'filterCategory', 'category': category}),
-      '*',
-    );
-  }
+  // ── Public API called by Flutter UI ──────────────────────────────────────
 
-  /// Center the map on specific coordinates.
-  void centerMap(double lat, double lng, [int zoom = 14]) {
-    _iframe?.contentWindow?.postMessage(
-      jsonEncode({'action': 'centerMap', 'lat': lat, 'lng': lng, 'zoom': zoom}),
-      '*',
-    );
-  }
+  /// Focus (fly to + open popup) a specific report by Firestore document ID.
+  void highlightReport(String id) => _send({'action': 'goToReport', 'id': id});
+
+  /// Apply a category filter on the map. Pass 'all' to clear.
+  void filterByCategory(String category) =>
+      _send({'action': 'filterCategory', 'category': category});
+
+  /// Center the map on [lat]/[lng] at optional [zoom].
+  void centerMap(double lat, double lng, [int zoom = 14]) =>
+      _send({'action': 'centerMap', 'lat': lat, 'lng': lng, 'zoom': zoom});
+
+  /// Search the map for [query] — highlights matching pins.
+  void search(String query) => _send({'action': 'search', 'query': query});
+
+  /// Switch between Citizen mode (all pins) and Volunteer mode (only critical).
+  void setMode(bool isVolunteer) =>
+      _send({'action': 'setMode', 'volunteer': isVolunteer});
+
+  /// Tell the map a report was accepted / task started (so it updates status).
+  void acceptTask(String id) => _send({'action': 'acceptTask', 'id': id});
+
+  /// Tell the map a task is complete so the pin can be removed.
+  void resolveReport(String id) => _send({'action': 'resolveReport', 'id': id});
 
   @override
   void dispose() {

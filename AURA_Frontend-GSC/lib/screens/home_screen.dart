@@ -27,6 +27,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   final PanelController _panelController = PanelController();
   bool _isVolunteerMode = false;
   bool _isScrollLocked = false;
+
+  // Key to send commands to the home-tab HeatMap iframe
+  final GlobalKey<HeatMapViewState> _homeMapKey = GlobalKey<HeatMapViewState>();
   
   late AnimationController _gradientController;
   late Animation<Alignment> _alignmentTop;
@@ -83,11 +86,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           _liveReportCount = data['count'] ?? 0;
         });
       }
-    } else if (action == 'more_info') {
-      // Navigate to Issues tab and show the report detail
-      setState(() {
-        _currentIndex = 1;
-      });
+    } else if (action == 'more_info' || action == 'report_focused') {
+      // A map popup button was tapped → switch to Issues tab
+      setState(() => _currentIndex = 1);
     }
   }
 
@@ -139,6 +140,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             },
             child: RepaintBoundary(
               child: HeatMapView(
+                key: _homeMapKey,
                 onMessage: _onHeatMapMessage,
               ),
             ),
@@ -159,6 +161,8 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                   setState(() {
                     _isVolunteerMode = !_isVolunteerMode;
                   });
+                  // Notify the home-tab map iframe of the mode change
+                  _homeMapKey.currentState?.setMode(_isVolunteerMode);
                 },
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 300),

@@ -3,10 +3,26 @@ import 'package:google_fonts/google_fonts.dart';
 
 /// Stub implementation for non-web platforms.
 /// Shows a placeholder instead of the Leaflet map.
-class HeatMapView extends StatelessWidget {
+/// All control methods are no-ops so callers don't need platform guards.
+class HeatMapView extends StatefulWidget {
   final Function(String action, Map<String, dynamic> data)? onMessage;
 
   const HeatMapView({super.key, this.onMessage});
+
+  @override
+  State<HeatMapView> createState() => HeatMapViewState();
+}
+
+class HeatMapViewState extends State<HeatMapView> {
+  // ── No-ops on non-web platforms ──────────────────────────────────────────
+
+  void highlightReport(String id) {}
+  void filterByCategory(String category) {}
+  void centerMap(double lat, double lng, [int zoom = 14]) {}
+  void search(String query) {}
+  void setMode(bool isVolunteer) {}
+  void acceptTask(String id) {}
+  void resolveReport(String id) {}
 
   @override
   Widget build(BuildContext context) {
@@ -39,16 +55,4 @@ class HeatMapView extends StatelessWidget {
       ),
     );
   }
-
-  /// No-op on non-web platforms.
-  void runJs(String js) {}
-
-  /// No-op on non-web platforms.
-  void highlightReport(String id) {}
-
-  /// No-op on non-web platforms.
-  void filterByCategory(String category) {}
-
-  /// No-op on non-web platforms.
-  void centerMap(double lat, double lng, [int zoom = 14]) {}
 }

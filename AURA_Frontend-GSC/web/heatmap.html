@@ -280,6 +280,12 @@
     body.navigating #top-bar, body.navigating #btn-my-location, body.navigating #btn-theme { display: none; }
     body.navigating .leaflet-control-zoom { display: none; }
 
+    /* Embedded mode: Flutter controls search/filter – hide map's own chrome */
+    body.embedded #top-bar,
+    body.embedded #btn-my-location,
+    body.embedded #btn-theme { display: none !important; }
+    body.embedded .leaflet-top.leaflet-left { bottom: 12px !important; }
+
     @media (max-width: 480px) {
       #top-bar { top: 8px; left: 8px; right: 8px; gap: 6px; }
       #search-box { padding: 0 10px; border-radius: var(--radius-sm); }
@@ -375,19 +381,47 @@
   <div id="toast"></div>
 
   <script>
-    // Listen for messages from parent Flutter frame
+    // ─── Detect embedded mode ────────────────────────────────────────────
+    (function () {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('embedded') === 'true') {
+        document.body.classList.add('embedded');
+      }
+    })();
+
+    // ─── Listen for messages from parent Flutter frame ───────────────────
     window.addEventListener('message', function(event) {
       try {
         var msg = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
-        if (msg.action === 'goToReport' && msg.id) {
-          if (window.goToReport) window.goToReport(msg.id);
-        } else if (msg.action === 'filterCategory' && msg.category) {
-          if (window.selectCategory) window.selectCategory(msg.category);
-        } else if (msg.action === 'centerMap') {
-          if (window.centerMap) window.centerMap(msg.lat, msg.lng, msg.zoom);
-        } else if (msg.eval) {
-          try { eval(msg.eval); } catch(e) {}
+        if (!msg || !msg.action) return;
+        switch (msg.action) {
+          case 'goToReport':
+            if (msg.id && window.goToReport) window.goToReport(msg.id);
+            break;
+          case 'filterCategory':
+            if (msg.category && window.selectCategory) window.selectCategory(msg.category);
+            break;
+          case 'centerMap':
+            if (window.centerMap) window.centerMap(msg.lat, msg.lng, msg.zoom);
+            break;
+          case 'search':
+            // Drive the search input and trigger the live-filter
+            if (msg.query !== undefined && window._driveSearch) window._driveSearch(msg.query);
+            break;
+          case 'setMode':
+            // Volunteer mode: show only critical (red) pins. Citizen: show all.
+            if (window._setVolunteerMode) window._setVolunteerMode(!!msg.volunteer);
+            break;
+          case 'acceptTask':
+            // Called when volunteer slides to accept — mark in_progress in Firestore
+            if (msg.id && window._acceptTask) window._acceptTask(msg.id);
+            break;
+          case 'resolveReport':
+            // Called when photo submitted — remove pin
+            if (msg.id && window._resolveReport) window._resolveReport(msg.id);
+            break;
         }
+        if (msg.eval) { try { eval(msg.eval); } catch(e) {} }
       } catch(e) {}
     });
 
@@ -599,8 +633,28 @@
       }
 
       window.moreInfo = function (id) {
-        const report = allReports[id];
-        try { window.parent.postMessage(JSON.stringify({ action: 'more_info', id: id, report: report }), '*'); } catch(e) {}
+        const report = allReports[id] || {};
+        // Send full structured data so the Flutter panel can display it
+        try {
+          window.parent.postMessage(JSON.stringify({
+            action: 'more_info',
+            id: id,
+            report: {
+              id: id,
+              title: report.problem || report.category || 'Unknown Issue',
+              category: report.category || 'General',
+              severity: report.severity || 0,
+              zone: report.zone || 'green',
+              latitude: report.latitude,
+              longitude: report.longitude,
+              location_name: report.location_name || 'Unknown',
+              complaint_count: report.complaint_count || 1,
+              people_accepted: report.people_accepted || 0,
+              task_status: report.task_status || 'open',
+              description: report.description || '',
+            }
+          }), '*');
+        } catch(e) {}
       };
 
       // Directions
@@ -751,6 +805,8 @@
         Object.entries(allReports).forEach(([id, r]) => {
           if (activeFilter !== 'all' && r.category !== activeFilter) return;
           const zone = r.zone || 'green';
+          // In volunteer mode, only show red/critical pins
+          if (_volunteerMode && zone !== 'red') return;
           if (isNav) {
             const isDestination = (id === navDestId);
             const isCritical = (zone === 'red' && r.severity >= 7);
@@ -793,6 +849,42 @@
         } catch(e) {}
       });
       window.allReports = allReports;
+
+      // ─── Flutter-driven helpers ────────────────────────────────────────
+      // Drive the search input programmatically from Flutter
+      window._driveSearch = function (query) {
+        const input = document.getElementById('search-input');
+        if (!input) return;
+        input.value = query;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      };
+
+      // Toggle volunteer mode: true = show only red/critical pins
+      let _volunteerMode = false;
+      window._setVolunteerMode = function (isVolunteer) {
+        _volunteerMode = isVolunteer;
+        render();
+      };
+
+      // Accept a task: increment people_accepted and set in_progress
+      window._acceptTask = async function (id) {
+        try {
+          await updateDoc(doc(db, 'heatmap_reports', id), {
+            people_accepted: increment(1),
+            task_status: 'in_progress'
+          });
+        } catch(e) {}
+      };
+
+      // Resolve a report: mark resolved so it disappears from the map
+      window._resolveReport = async function (id) {
+        try {
+          await updateDoc(doc(db, 'heatmap_reports', id), {
+            resolved: true,
+            task_status: 'resolved'
+          });
+        } catch(e) {}
+      };
 
       function stats() {
         const r = Object.values(allReports);
