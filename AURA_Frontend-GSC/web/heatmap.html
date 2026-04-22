@@ -1,0 +1,816 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="description" content="AURA HeatMap — NGO Emergency Response">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>AURA HeatMap</title>
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+
+  <style>
+    .marker-cluster { background: transparent !important; border: none !important; }
+    .marker-cluster div {
+      display: flex; align-items: center; justify-content: center; border-radius: 50%;
+      font-family: 'Poppins', sans-serif; font-weight: 700; font-size: 14px; color: #fff;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.3); border: 2.5px solid rgba(255,255,255,0.95);
+      width: 100% !important; height: 100% !important; margin: 0 !important; line-height: 1 !important;
+    }
+    .cluster-green div { background: #10b981; }
+    .cluster-yellow div { background: #f59e0b; }
+    .cluster-red div { background: #ef4444; }
+    .leaflet-cluster-anim .leaflet-marker-icon { transition: transform 0.3s ease; }
+    .marker-cluster-coverage {
+      stroke: rgba(100,100,100,0.35) !important; stroke-width: 1.5 !important;
+      fill: rgba(100,100,100,0.06) !important; stroke-dasharray: 4,4 !important;
+    }
+
+    :root {
+      --bg: #f8fafc; --card-bg: rgba(255,255,255,0.97); --text: #1e293b;
+      --text-muted: #64748b; --border: rgba(0,0,0,0.08); --accent: #0ea5e9;
+      --shadow-sm: 0 2px 8px rgba(0,0,0,0.08); --shadow-md: 0 4px 20px rgba(0,0,0,0.1);
+      --shadow-lg: 0 8px 32px rgba(0,0,0,0.15); --radius-sm: 10px; --radius-md: 14px; --radius-lg: 18px;
+    }
+    [data-theme="dark"] {
+      --bg: #1e293b; --card-bg: rgba(30,41,59,0.97); --text: #f1f5f9;
+      --text-muted: #94a3b8; --border: rgba(255,255,255,0.1);
+      --shadow-sm: 0 2px 8px rgba(0,0,0,0.25); --shadow-md: 0 4px 20px rgba(0,0,0,0.3);
+      --shadow-lg: 0 8px 32px rgba(0,0,0,0.4);
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      width: 100%; height: 100%; overflow: hidden; font-family: 'Poppins', sans-serif;
+      background: var(--bg); -webkit-font-smoothing: antialiased;
+    }
+    #leaflet-map { position: absolute; top: 0; left: 0; right: 0; bottom: 0; z-index: 1; }
+    .leaflet-container { background: #e2e8f0; }
+    [data-theme="dark"] .leaflet-container { background: #1e293b; }
+    [data-theme="dark"] .dark-map-tiles { filter: invert(1) hue-rotate(180deg) brightness(0.95) contrast(0.9); }
+    .leaflet-top.leaflet-left { top: auto !important; bottom: 24px !important; }
+
+    #top-bar {
+      position: absolute; top: 12px; left: 12px; right: 12px; z-index: 900;
+      display: flex; gap: 10px; max-width: 600px; margin-left: auto;
+    }
+    #search-box {
+      flex: 1; position: relative; display: flex; align-items: center;
+      background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius-md);
+      padding: 0 14px; box-shadow: var(--shadow-md); backdrop-filter: blur(16px);
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    #search-box:focus-within { border-color: var(--accent); box-shadow: var(--shadow-md), 0 0 0 3px rgba(14,165,233,0.15); }
+    #search-box svg { width: 18px; height: 18px; fill: var(--text-muted); flex-shrink: 0; }
+    #search-input {
+      flex: 1; border: none; background: transparent; padding: 12px 10px;
+      font-family: 'Poppins', sans-serif; font-size: 14px; color: var(--text); outline: none;
+    }
+    #search-input::placeholder { color: var(--text-muted); }
+    #search-clear {
+      display: none; background: none; border: none; cursor: pointer; padding: 4px 6px;
+      color: var(--text-muted); font-size: 16px; border-radius: 50%; transition: background 0.15s;
+    }
+    #search-clear:hover { background: rgba(0,0,0,0.06); }
+    #search-clear.visible { display: flex; align-items: center; justify-content: center; }
+
+    #category-dropdown { position: relative; }
+    #category-btn {
+      display: flex; align-items: center; gap: 8px; padding: 12px 16px;
+      background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius-md);
+      font-family: 'Poppins', sans-serif; font-size: 13px; font-weight: 600; color: var(--text);
+      cursor: pointer; box-shadow: var(--shadow-md); backdrop-filter: blur(16px); white-space: nowrap;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    #category-btn:hover { border-color: var(--accent); }
+    #category-menu {
+      display: none; position: absolute; top: calc(100% + 6px); right: 0;
+      background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius-md);
+      box-shadow: var(--shadow-lg); overflow: hidden; min-width: 170px; z-index: 1000;
+      backdrop-filter: blur(16px);
+    }
+    #category-menu.open { display: block; }
+    .cat-option {
+      display: flex; align-items: center; gap: 10px; padding: 11px 16px; font-size: 13px;
+      color: var(--text); cursor: pointer; transition: background 0.15s;
+    }
+    .cat-option:hover { background: rgba(14,165,233,0.08); }
+    .cat-option.active { background: var(--accent); color: white; }
+    .cat-option .cat-icon { font-size: 16px; }
+    .cat-option .cat-count {
+      margin-left: auto; font-size: 11px; background: rgba(0,0,0,0.08);
+      padding: 2px 7px; border-radius: 8px; font-weight: 600;
+    }
+    .cat-option.active .cat-count { background: rgba(255,255,255,0.2); }
+
+    #search-results {
+      display: none; position: absolute; top: calc(100% + 6px); left: 0; right: 0;
+      background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius-md);
+      box-shadow: var(--shadow-lg); max-height: 300px; overflow-y: auto; z-index: 1000;
+      backdrop-filter: blur(16px);
+    }
+    #search-results.open { display: block; }
+    .search-result-item {
+      display: flex; align-items: center; gap: 12px; padding: 12px 16px; cursor: pointer;
+      border-bottom: 1px solid var(--border); transition: background 0.15s;
+    }
+    .search-result-item:last-child { border-bottom: none; }
+    .search-result-item:hover { background: rgba(14,165,233,0.06); }
+    .result-severity { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+    .result-info { flex: 1; min-width: 0; }
+    .result-problem { font-size: 13px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .result-meta { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+    .no-results { padding: 20px; text-align: center; color: var(--text-muted); font-size: 13px; }
+
+    .fab {
+      position: absolute; z-index: 800; display: flex; align-items: center; justify-content: center;
+      width: 46px; height: 46px; background: var(--card-bg); border: 1px solid var(--border);
+      border-radius: 50%; cursor: pointer; box-shadow: var(--shadow-sm); backdrop-filter: blur(12px);
+      transition: transform 0.15s, box-shadow 0.15s;
+    }
+    .fab:hover { transform: scale(1.08); box-shadow: var(--shadow-md); }
+    .fab:active { transform: scale(0.95); }
+    .fab svg { width: 22px; height: 22px; fill: var(--text); }
+    #btn-my-location { bottom: 160px; right: 12px; }
+    #btn-theme { bottom: 100px; right: 12px; }
+
+    .user-dot { width: 20px; height: 20px; position: relative; }
+    .user-dot-inner {
+      position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+      width: 14px; height: 14px; background: #3b82f6; border: 3px solid white;
+      border-radius: 50%; box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    }
+    .user-dot-pulse {
+      position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+      width: 20px; height: 20px; background: rgba(59,130,246,0.3); border-radius: 50%;
+      animation: pulse 2s ease-out infinite;
+    }
+    @keyframes pulse {
+      0% { transform: translate(-50%,-50%) scale(0.8); opacity: 1; }
+      100% { transform: translate(-50%,-50%) scale(2.5); opacity: 0; }
+    }
+
+    .nav-arrow { width: 44px; height: 44px; filter: drop-shadow(0 4px 12px rgba(0,0,0,0.4)); }
+
+    .aura-pin { position: relative; }
+    .aura-pin.ripple-red::after, .aura-pin.ripple-yellow::after, .aura-pin.ripple-green::after {
+      content: ''; position: absolute; top: 50%; left: 50%; transform: translate(-50%,-60%);
+      width: var(--ripple-size, 40px); height: var(--ripple-size, 40px); border-radius: 50%;
+      background: var(--glow); opacity: var(--ripple-opacity, 0.4);
+      animation: pinRipple var(--anim-duration, 2s) ease-out infinite; z-index: -1;
+    }
+    .aura-pin.ripple-red::before {
+      content: ''; position: absolute; top: 50%; left: 50%; transform: translate(-50%,-60%);
+      width: calc(var(--ripple-size, 40px) * 0.7); height: calc(var(--ripple-size, 40px) * 0.7);
+      border-radius: 50%; background: var(--glow);
+      opacity: calc(var(--ripple-opacity, 0.4) * 0.6);
+      animation: pinRipple var(--anim-duration, 2s) ease-out infinite 0.5s; z-index: -1;
+    }
+    @keyframes pinRipple {
+      0% { transform: translate(-50%,-60%) scale(0.5); opacity: var(--ripple-opacity, 0.4); }
+      100% { transform: translate(-50%,-60%) scale(2.5); opacity: 0; }
+    }
+
+    .aura-popup .leaflet-popup-content-wrapper {
+      background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius-lg);
+      padding: 0; overflow: hidden; box-shadow: var(--shadow-lg); backdrop-filter: blur(16px);
+    }
+    .aura-popup .leaflet-popup-tip-container { display: none; }
+    .aura-popup .leaflet-popup-content { margin: 0; width: 290px !important; }
+    .aura-popup .leaflet-popup-close-button {
+      color: var(--text-muted) !important; font-size: 22px !important; top: 12px !important;
+      right: 14px !important; width: 28px !important; height: 28px !important;
+      display: flex !important; align-items: center; justify-content: center;
+      border-radius: 50%; transition: background 0.15s; z-index: 10;
+    }
+    .aura-popup .leaflet-popup-close-button:hover { background: rgba(0,0,0,0.06); }
+    .popup-inner { color: var(--text); }
+    .popup-header { padding: 16px 48px 14px 16px; display: flex; align-items: center; gap: 10px; }
+    .popup-badge { font-size: 10px; font-weight: 700; letter-spacing: 0.8px; padding: 5px 12px; border-radius: 20px; color: white; text-transform: uppercase; flex-shrink: 0; }
+    .popup-status { font-size: 11px; font-weight: 500; color: var(--text-muted); display: flex; align-items: center; gap: 4px; white-space: nowrap; }
+    .popup-status-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+    .popup-title { padding: 0 16px 14px; font-size: 15px; font-weight: 600; line-height: 1.45; color: var(--text); }
+    .popup-stats { display: flex; margin: 0 16px; padding: 14px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+    .popup-stat { flex: 1; text-align: center; position: relative; }
+    .popup-stat+.popup-stat::before { content: ''; position: absolute; left: 0; top: 4px; bottom: 4px; width: 1px; background: var(--border); }
+    .popup-stat-val { font-size: 22px; font-weight: 700; }
+    .popup-stat-label { font-size: 9px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; }
+    .popup-location { padding: 10px 16px; font-size: 12px; color: var(--text-muted); display: flex; align-items: center; gap: 6px; }
+    .popup-actions { padding: 10px 16px 16px; display: flex; gap: 10px; }
+    .popup-btn {
+      flex: 1; padding: 11px 12px; border-radius: var(--radius-sm); font-family: 'Poppins', sans-serif;
+      font-size: 12px; font-weight: 600; cursor: pointer; border: none; transition: filter 0.15s, transform 0.1s;
+    }
+    .popup-btn:hover { filter: brightness(1.1); }
+    .popup-btn:active { transform: scale(0.97); }
+    .popup-btn-secondary { background: var(--border); color: var(--text); }
+    .popup-btn-primary { color: white; box-shadow: 0 4px 12px rgba(0,0,0,0.18); }
+
+    #route-sheet {
+      display: none; position: absolute; bottom: 0; left: 0; right: 0; z-index: 950;
+      background: var(--card-bg); border-top: 1px solid var(--border); border-radius: 20px 20px 0 0;
+      padding: 16px 20px 24px; box-shadow: 0 -8px 30px rgba(0,0,0,0.15);
+      backdrop-filter: blur(16px); animation: sheetUp 0.3s ease;
+    }
+    @keyframes sheetUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+    .sheet-handle { width: 36px; height: 4px; background: var(--border); border-radius: 2px; margin: 0 auto 16px; }
+    .sheet-title { font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+    .sheet-dest { font-size: 18px; font-weight: 700; color: var(--text); margin: 4px 0 16px; }
+    .sheet-meta { display: flex; gap: 24px; margin-bottom: 14px; }
+    .sheet-meta-val { font-size: 24px; font-weight: 700; color: var(--text); }
+    .sheet-meta-label { font-size: 11px; color: var(--text-muted); }
+
+    .transport-modes { display: flex; gap: 8px; margin-bottom: 16px; }
+    .transport-mode {
+      flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px;
+      padding: 10px 6px; background: var(--border); border: 2px solid transparent;
+      border-radius: var(--radius-sm); cursor: pointer; font-family: 'Poppins', sans-serif;
+      font-size: 10px; font-weight: 600; color: var(--text-muted); transition: all 0.2s;
+    }
+    .transport-mode:hover { border-color: rgba(14,165,233,0.3); }
+    .transport-mode.active { background: rgba(14,165,233,0.12); border-color: var(--accent); color: var(--accent); }
+    .transport-mode .mode-icon { font-size: 20px; line-height: 1; }
+    .transport-mode .mode-info { display: flex; flex-direction: column; align-items: center; gap: 1px; }
+    .transport-mode .mode-dist { font-size: 8px; font-weight: 500; opacity: 0.6; }
+    .transport-mode .mode-eta { font-size: 9px; font-weight: 600; opacity: 0.85; }
+    .transport-mode.loading .mode-eta, .transport-mode.loading .mode-dist { opacity: 0.3; }
+
+    .sheet-btns { display: flex; gap: 12px; }
+    .sheet-btn {
+      flex: 1; padding: 14px; border-radius: var(--radius-md); font-family: 'Poppins', sans-serif;
+      font-size: 15px; font-weight: 700; cursor: pointer; border: none; transition: filter 0.15s, transform 0.1s;
+    }
+    .sheet-btn:active { transform: scale(0.98); }
+    .sheet-btn-cancel { background: var(--border); color: var(--text); }
+    .sheet-btn-start { background: linear-gradient(135deg, #0ea5e9, #2563eb); color: white; box-shadow: 0 4px 16px rgba(14,165,233,0.4); }
+
+    #nav-hud {
+      display: none; position: absolute; top: 0; left: 0; right: 0; z-index: 950;
+      background: linear-gradient(135deg, #1d4ed8, #0ea5e9); padding: 16px 20px 12px;
+      padding-top: max(env(safe-area-inset-top), 16px); box-shadow: 0 4px 24px rgba(14,165,233,0.4);
+    }
+    .hud-row { display: flex; align-items: center; gap: 16px; }
+    .hud-icon { width: 56px; height: 56px; background: rgba(255,255,255,0.15); border-radius: var(--radius-md); display: flex; align-items: center; justify-content: center; font-size: 32px; }
+    .hud-info { flex: 1; }
+    .hud-distance { font-size: 28px; font-weight: 800; color: white; }
+    .hud-instruction { font-size: 14px; color: rgba(255,255,255,0.85); margin-top: 2px; }
+    .hud-bottom { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.15); }
+    .hud-eta-label { font-size: 11px; color: rgba(255,255,255,0.7); }
+    .hud-eta-val { font-size: 18px; font-weight: 700; color: white; }
+    .hud-remaining { font-size: 14px; color: rgba(255,255,255,0.85); }
+    .hud-end-btn {
+      padding: 10px 20px; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3);
+      border-radius: 20px; color: white; font-family: 'Poppins', sans-serif; font-size: 13px;
+      font-weight: 700; cursor: pointer; transition: background 0.15s;
+    }
+    .hud-end-btn:hover { background: rgba(255,255,255,0.3); }
+
+    #toast {
+      display: none; position: absolute; bottom: 80px; left: 50%; transform: translateX(-50%); z-index: 999;
+      background: rgba(15,23,42,0.92); color: white; padding: 12px 20px; border-radius: 24px;
+      font-size: 13px; font-weight: 500; box-shadow: 0 4px 16px rgba(0,0,0,0.3); white-space: nowrap;
+    }
+    body.navigating #top-bar, body.navigating #btn-my-location, body.navigating #btn-theme { display: none; }
+    body.navigating .leaflet-control-zoom { display: none; }
+
+    @media (max-width: 480px) {
+      #top-bar { top: 8px; left: 8px; right: 8px; gap: 6px; }
+      #search-box { padding: 0 10px; border-radius: var(--radius-sm); }
+      #search-input { font-size: 12px; padding: 10px 6px; }
+      #category-btn { padding: 10px 10px; font-size: 11px; gap: 5px; }
+      #cat-label { display: none; }
+      .fab { width: 40px; height: 40px; }
+      .fab svg { width: 18px; height: 18px; }
+      #btn-my-location { bottom: 120px; right: 8px; }
+      #btn-theme { bottom: 70px; right: 8px; }
+      .aura-popup .leaflet-popup-content { width: 240px !important; }
+    }
+  </style>
+</head>
+
+<body>
+  <div id="leaflet-map"></div>
+  <div id="stats-data" style="display:none;"></div>
+
+  <div id="top-bar">
+    <div id="search-box">
+      <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+      <input type="text" id="search-input" placeholder="Search problems, locations, severity...">
+      <button id="search-clear" onclick="clearSearch()">✕</button>
+    </div>
+    <div id="search-results"></div>
+    <div id="category-dropdown">
+      <button id="category-btn" onclick="toggleCategoryMenu()">
+        <span id="cat-icon">📍</span><span id="cat-label">All</span><span>▼</span>
+      </button>
+      <div id="category-menu">
+        <div class="cat-option active" data-cat="all" onclick="selectCategory('all')"><span class="cat-icon">📍</span>All<span class="cat-count" id="cnt-all">0</span></div>
+        <div class="cat-option" data-cat="Flood" onclick="selectCategory('Flood')"><span class="cat-icon">🌊</span>Flood<span class="cat-count" id="cnt-Flood">0</span></div>
+        <div class="cat-option" data-cat="Fire" onclick="selectCategory('Fire')"><span class="cat-icon">🔥</span>Fire<span class="cat-count" id="cnt-Fire">0</span></div>
+        <div class="cat-option" data-cat="Medical" onclick="selectCategory('Medical')"><span class="cat-icon">🏥</span>Medical<span class="cat-count" id="cnt-Medical">0</span></div>
+        <div class="cat-option" data-cat="Shelter" onclick="selectCategory('Shelter')"><span class="cat-icon">🏠</span>Shelter<span class="cat-count" id="cnt-Shelter">0</span></div>
+        <div class="cat-option" data-cat="Food" onclick="selectCategory('Food')"><span class="cat-icon">🍲</span>Food<span class="cat-count" id="cnt-Food">0</span></div>
+      </div>
+    </div>
+  </div>
+
+  <button class="fab" id="btn-my-location" onclick="centerOnUser()" title="My Location">
+    <svg viewBox="0 0 24 24"><path d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm8.94 3A8.994 8.994 0 0013 3.06V1h-2v2.06A8.994 8.994 0 003.06 11H1v2h2.06A8.994 8.994 0 0011 20.94V23h2v-2.06A8.994 8.994 0 0020.94 13H23v-2h-2.06zM12 19c-3.87 0-7-3.13-7-7s3.13-7 7-7 7 3.13 7 7-3.13 7-7 7z"/></svg>
+  </button>
+  <button class="fab" id="btn-theme" onclick="toggleTheme()" title="Toggle Theme">
+    <svg id="theme-icon" viewBox="0 0 24 24"><path d="M12 3a9 9 0 109 9c0-.46-.04-.92-.1-1.36a5.389 5.389 0 01-4.4 2.26 5.403 5.403 0 01-3.14-9.8c-.44-.06-.9-.1-1.36-.1z"/></svg>
+  </button>
+
+  <div id="route-sheet">
+    <div class="sheet-handle"></div>
+    <div class="sheet-title">Route Ready</div>
+    <div class="sheet-dest" id="sheet-dest">Destination</div>
+    <div class="transport-modes" id="transport-modes">
+      <div class="transport-mode active" data-mode="driving" onclick="selectTransport('driving')">
+        <span class="mode-icon">🚗</span><span>Car</span>
+        <div class="mode-info"><span class="mode-eta" id="eta-driving">...</span><span class="mode-dist" id="dist-driving"></span></div>
+      </div>
+      <div class="transport-mode" data-mode="bike" onclick="selectTransport('bike')">
+        <span class="mode-icon">🏍️</span><span>Bike</span>
+        <div class="mode-info"><span class="mode-eta" id="eta-bike">...</span><span class="mode-dist" id="dist-bike"></span></div>
+      </div>
+      <div class="transport-mode" data-mode="foot" onclick="selectTransport('foot')">
+        <span class="mode-icon">🚶</span><span>Walk</span>
+        <div class="mode-info"><span class="mode-eta" id="eta-foot">...</span><span class="mode-dist" id="dist-foot"></span></div>
+      </div>
+    </div>
+    <div class="sheet-meta">
+      <div><div class="sheet-meta-val" id="sheet-dist">--</div><div class="sheet-meta-label">Distance</div></div>
+      <div><div class="sheet-meta-val" id="sheet-eta">--</div><div class="sheet-meta-label">ETA</div></div>
+      <div><div class="sheet-meta-val" id="sheet-dur">--</div><div class="sheet-meta-label">Duration</div></div>
+    </div>
+    <div class="sheet-btns">
+      <button class="sheet-btn sheet-btn-cancel" onclick="cancelRoute()">Cancel</button>
+      <button class="sheet-btn sheet-btn-start" onclick="startNav()">▶ Start</button>
+    </div>
+  </div>
+
+  <div id="nav-hud">
+    <div class="hud-row">
+      <div class="hud-icon" id="hud-arrow">⬆️</div>
+      <div class="hud-info">
+        <div class="hud-distance" id="hud-dist">--</div>
+        <div class="hud-instruction" id="hud-instr">Calculating...</div>
+      </div>
+    </div>
+    <div class="hud-bottom">
+      <div><div class="hud-eta-label">Arrival</div><div class="hud-eta-val" id="hud-eta">--</div></div>
+      <div class="hud-remaining" id="hud-remain">--</div>
+      <button class="hud-end-btn" onclick="endNav()">End</button>
+    </div>
+  </div>
+
+  <div id="toast"></div>
+
+  <script>
+    // Listen for messages from parent Flutter frame
+    window.addEventListener('message', function(event) {
+      try {
+        var msg = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+        if (msg.action === 'goToReport' && msg.id) {
+          if (window.goToReport) window.goToReport(msg.id);
+        } else if (msg.action === 'filterCategory' && msg.category) {
+          if (window.selectCategory) window.selectCategory(msg.category);
+        } else if (msg.action === 'centerMap') {
+          if (window.centerMap) window.centerMap(msg.lat, msg.lng, msg.zoom);
+        } else if (msg.eval) {
+          try { eval(msg.eval); } catch(e) {}
+        }
+      } catch(e) {}
+    });
+
+    (async function () {
+      const { initializeApp } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js");
+      const { getFirestore, collection, query, where, onSnapshot, doc, updateDoc, increment }
+        = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
+
+      const fb = initializeApp({
+        apiKey: "AIzaSyDwRkQotFi8w0ZzD9i9A9zvQWVNEpvMvqE",
+        authDomain: "heatmap-1dcc6.firebaseapp.com",
+        projectId: "heatmap-1dcc6",
+        storageBucket: "heatmap-1dcc6.appspot.com",
+        messagingSenderId: "1069657110748",
+        appId: "1:1069657110748:web:429e0fa857862b62a8dc19"
+      });
+      const db = getFirestore(fb);
+
+      const TILE_URL = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
+      const TILE_OPTS = { attribution: '© OSM © CARTO', subdomains: 'abcd', maxZoom: 19 };
+      const TILES = {
+        light: L.tileLayer(TILE_URL, TILE_OPTS),
+        dark: L.tileLayer(TILE_URL, { ...TILE_OPTS, className: 'dark-map-tiles' })
+      };
+      let theme = (new Date().getHours() >= 18 || new Date().getHours() < 6) ? 'dark' : 'light';
+
+      const map = L.map('leaflet-map', { center: [12.9716, 77.5946], zoom: 12, zoomControl: true });
+      TILES[theme].addTo(map);
+      document.documentElement.setAttribute('data-theme', theme);
+
+      window.toggleTheme = function () {
+        map.removeLayer(TILES[theme]);
+        theme = theme === 'dark' ? 'light' : 'dark';
+        TILES[theme].addTo(map);
+        document.documentElement.setAttribute('data-theme', theme);
+      };
+
+      let markerLayer = L.markerClusterGroup({
+        maxClusterRadius: 45, spiderfyOnMaxZoom: true, showCoverageOnHover: true,
+        zoomToBoundsOnClick: true, disableClusteringAtZoom: 17, animate: true, animateAddingMarkers: false,
+        polygonOptions: { fillColor: 'rgba(100,100,100,0.06)', color: 'rgba(100,100,100,0.35)', weight: 1.5, dashArray: '4,4', fillOpacity: 0.06 },
+        iconCreateFunction: function (cluster) {
+          const children = cluster.getAllChildMarkers();
+          let maxSeverity = 0;
+          children.forEach(m => { maxSeverity = Math.max(maxSeverity, m._severity || 1); });
+          const count = cluster.getChildCount();
+          let colorClass = 'cluster-green';
+          if (maxSeverity >= 7) colorClass = 'cluster-red';
+          else if (maxSeverity >= 4) colorClass = 'cluster-yellow';
+          if (colorClass === 'cluster-green' && count >= 7) colorClass = 'cluster-yellow';
+          if (colorClass === 'cluster-yellow' && count >= 8) colorClass = 'cluster-red';
+          let dim = count >= 10 ? 48 : count >= 5 ? 44 : 40;
+          return L.divIcon({ html: '<div>' + count + '</div>', className: 'marker-cluster ' + colorClass, iconSize: L.point(dim, dim) });
+        }
+      }).addTo(map);
+      let ghostLayer = L.heatLayer([], { radius: 60, blur: 45, maxZoom: 18, minOpacity: 0.3, gradient: { 0.2: 'rgba(100,100,255,0.3)', 0.5: 'rgba(150,100,255,0.4)', 1: 'rgba(200,50,255,0.5)' } }).addTo(map);
+      let allReports = {};
+      let activeFilter = 'all';
+      let userLoc = null, userMarker = null, accCircle = null, navArrow = null;
+      let isNav = false, destLat = null, destLng = null, routeSteps = [], navDestId = null, activeTransport = 'driving';
+
+      function makeIcon(color, zone) {
+        const rippleSize = zone === 'red' ? 60 : zone === 'yellow' ? 45 : 30;
+        const rippleOpacity = zone === 'red' ? 0.5 : zone === 'yellow' ? 0.35 : 0.2;
+        const animDuration = zone === 'red' ? '1.5s' : zone === 'yellow' ? '2s' : '2.5s';
+        const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="40" viewBox="0 0 32 40">
+        <ellipse cx="16" cy="38" rx="6" ry="2" fill="rgba(0,0,0,0.2)"/>
+        <path d="M16 2C9.4 2 4 7.4 4 14c0 9 12 24 12 24s12-15 12-24c0-6.6-5.4-12-12-12z" fill="${color}" stroke="white" stroke-width="1.5"/>
+        <circle cx="16" cy="14" r="5" fill="rgba(255,255,255,0.3)"/>
+        <text x="16" y="17" text-anchor="middle" font-size="10" font-weight="bold" fill="white">!</text>
+      </svg>`;
+        return L.divIcon({
+          html: `<div class="aura-pin ripple-${zone}" style="--glow:${color};--ripple-size:${rippleSize}px;--ripple-opacity:${rippleOpacity};--anim-duration:${animDuration}">${svg}</div>`,
+          className: '', iconSize: [32, 40], iconAnchor: [16, 40], popupAnchor: [0, -40]
+        });
+      }
+      const ICONS = { red: makeIcon('#ef4444', 'red'), yellow: makeIcon('#f59e0b', 'yellow'), green: makeIcon('#10b981', 'green') };
+      const userIcon = L.divIcon({ html: '<div class="user-dot"><div class="user-dot-pulse"></div><div class="user-dot-inner"></div></div>', className: '', iconSize: [20, 20], iconAnchor: [10, 10] });
+
+      function navIcon() {
+        return L.divIcon({
+          html: `<div class="nav-arrow"><svg viewBox="0 0 44 44" width="44" height="44">
+          <defs><linearGradient id="ng" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stop-color="#3b82f6"/><stop offset="100%" stop-color="#1d4ed8"/></linearGradient></defs>
+          <circle cx="22" cy="22" r="20" fill="url(#ng)" stroke="white" stroke-width="3"/>
+          <polygon points="22,8 32,32 22,26 12,32" fill="white"/>
+        </svg></div>`, className: '', iconSize: [44, 44], iconAnchor: [22, 22]
+        });
+      }
+
+      // GPS
+      function onPos(p) {
+        userLoc = [p.coords.latitude, p.coords.longitude];
+        if (isNav) {
+          if (navArrow) navArrow.setLatLng(userLoc);
+          map.panTo(userLoc, { animate: true, duration: 0.4 });
+          updateHUD();
+          if (destLat && map.distance(userLoc, [destLat, destLng]) < 30) arrive();
+        } else {
+          if (!userMarker) {
+            userMarker = L.marker(userLoc, { icon: userIcon, zIndexOffset: 1000 }).addTo(map);
+            accCircle = L.circle(userLoc, { radius: p.coords.accuracy, color: '#3b82f6', fillOpacity: 0.08, weight: 1 }).addTo(map);
+            map.flyTo(userLoc, 14, { duration: 1.5 });
+          } else {
+            userMarker.setLatLng(userLoc);
+            accCircle.setLatLng(userLoc).setRadius(p.coords.accuracy);
+          }
+        }
+        // Notify parent Flutter frame of location update
+        try { window.parent.postMessage(JSON.stringify({ action: 'location_update', lat: userLoc[0], lng: userLoc[1] }), '*'); } catch(e) {}
+      }
+      function onPosErr(e) { userLoc = [12.9716, 77.5946]; toast('GPS unavailable'); }
+      if (navigator.geolocation) navigator.geolocation.watchPosition(onPos, onPosErr, { enableHighAccuracy: true, timeout: 15000, maximumAge: 3000 });
+      else userLoc = [12.9716, 77.5946];
+
+      window.centerOnUser = function () { if (userLoc) map.flyTo(userLoc, 15, { duration: 1 }); else toast('Location not available'); };
+
+      function toast(msg) {
+        const t = document.getElementById('toast');
+        t.textContent = msg; t.style.display = 'block';
+        setTimeout(() => t.style.display = 'none', 3000);
+      }
+
+      window.toggleCategoryMenu = function () {
+        document.getElementById('category-menu').classList.toggle('open');
+        document.getElementById('search-results').classList.remove('open');
+      };
+      window.selectCategory = function (cat) {
+        activeFilter = cat;
+        document.querySelectorAll('.cat-option').forEach(o => o.classList.toggle('active', o.dataset.cat === cat));
+        const icons = { all: '📍', Flood: '🌊', Fire: '🔥', Medical: '🏥', Shelter: '🏠', Food: '🍲' };
+        document.getElementById('cat-icon').textContent = icons[cat] || '📍';
+        document.getElementById('cat-label').textContent = cat === 'all' ? 'All' : cat;
+        document.getElementById('category-menu').classList.remove('open');
+        render();
+      };
+      document.addEventListener('click', e => {
+        if (!e.target.closest('#category-dropdown')) document.getElementById('category-menu').classList.remove('open');
+        if (!e.target.closest('#search-box') && !e.target.closest('#search-results')) document.getElementById('search-results').classList.remove('open');
+      });
+
+      // Search
+      const searchInput = document.getElementById('search-input');
+      const searchResults = document.getElementById('search-results');
+      const searchClear = document.getElementById('search-clear');
+      searchInput.addEventListener('input', function () {
+        const q = this.value.toLowerCase().trim();
+        searchClear.classList.toggle('visible', q.length > 0);
+        if (q.length < 2) { searchResults.classList.remove('open'); return; }
+        const results = Object.entries(allReports).filter(([id, r]) => {
+          const prob = (r.problem || '').toLowerCase();
+          const loc = (r.location_name || '').toLowerCase();
+          const cat = (r.category || '').toLowerCase();
+          const sev = String(r.severity || '');
+          const zone = (r.zone || '').toLowerCase();
+          return prob.includes(q) || loc.includes(q) || cat.includes(q) || sev.includes(q) || zone.includes(q);
+        }).slice(0, 8);
+        if (results.length === 0) {
+          searchResults.innerHTML = '<div class="no-results">No results found</div>';
+        } else {
+          searchResults.innerHTML = results.map(([id, r]) => {
+            const color = r.zone === 'red' ? '#ef4444' : r.zone === 'yellow' ? '#f59e0b' : '#10b981';
+            return `<div class="search-result-item" onclick="goToReport('${id}')">
+            <div class="result-severity" style="background:${color}"></div>
+            <div class="result-info">
+              <div class="result-problem">${r.problem || r.category || 'Unknown'}</div>
+              <div class="result-meta">${r.category} • Severity ${r.severity}/10 • ${r.location_name || 'Unknown location'}</div>
+            </div>
+          </div>`;
+          }).join('');
+        }
+        searchResults.classList.add('open');
+      });
+      window.clearSearch = function () { searchInput.value = ''; searchClear.classList.remove('visible'); searchResults.classList.remove('open'); };
+      window.goToReport = function (id) {
+        const r = allReports[id];
+        if (!r) return;
+        map.flyTo([r.latitude, r.longitude], 16, { duration: 1 });
+        searchResults.classList.remove('open');
+        searchInput.value = '';
+        searchClear.classList.remove('visible');
+        markerLayer.eachLayer(m => { if (m._reportId === id) m.openPopup(); });
+        // Notify Flutter
+        try { window.parent.postMessage(JSON.stringify({ action: 'report_focused', id: id, report: r }), '*'); } catch(e) {}
+      };
+
+      function popup(r, id) {
+        const color = r.zone === 'red' ? '#ef4444' : r.zone === 'yellow' ? '#f59e0b' : '#10b981';
+        const bg = r.zone === 'red' ? 'rgba(239,68,68,0.08)' : r.zone === 'yellow' ? 'rgba(245,158,11,0.08)' : 'rgba(16,185,129,0.08)';
+        const statusText = r.task_status === 'resolved' ? 'Resolved' : r.task_status === 'in_progress' ? 'In Progress' : 'Open';
+        const statusDotColor = r.task_status === 'resolved' ? '#10b981' : r.task_status === 'in_progress' ? '#f59e0b' : '#ef4444';
+        const prob = (r.problem || r.category || 'Unknown').replace(/'/g, "\\'");
+        return `<div class="popup-inner">
+        <div class="popup-header" style="background:${bg}">
+          <span class="popup-badge" style="background:${color}">${(r.zone || '').toUpperCase()}</span>
+          <span class="popup-status"><span class="popup-status-dot" style="background:${statusDotColor}"></span>${statusText}</span>
+        </div>
+        <div class="popup-title">${r.problem || r.category || 'Unknown Issue'}</div>
+        <div class="popup-stats">
+          <div class="popup-stat"><div class="popup-stat-val" style="color:${color}">${r.severity || 0}</div><div class="popup-stat-label">Severity</div></div>
+          <div class="popup-stat"><div class="popup-stat-val">${r.complaint_count || 1}</div><div class="popup-stat-label">Reports</div></div>
+          <div class="popup-stat"><div class="popup-stat-val">${r.people_accepted || 0}</div><div class="popup-stat-label">Helping</div></div>
+        </div>
+        <div class="popup-location">📍 ${r.location_name || 'Unknown'}</div>
+        <div class="popup-actions">
+          <button class="popup-btn popup-btn-secondary" onclick="moreInfo('${id}')">More Info</button>
+          <button class="popup-btn popup-btn-primary" style="background:${color}" onclick="getDir('${id}',${r.latitude},${r.longitude},'${prob}')">Directions →</button>
+        </div>
+      </div>`;
+      }
+
+      window.moreInfo = function (id) {
+        const report = allReports[id];
+        try { window.parent.postMessage(JSON.stringify({ action: 'more_info', id: id, report: report }), '*'); } catch(e) {}
+      };
+
+      // Directions
+      let pendingDirProb = '', pendingDirId = '', modeRouteCache = {}, navStepIndex = 0;
+      window.getDir = async function (id, lat, lng, prob) {
+        if (isNav && navDestId === id) return;
+        try { await updateDoc(doc(db, 'heatmap_reports', id), { people_accepted: increment(1), task_status: 'in_progress' }); } catch (e) { }
+        destLat = lat; destLng = lng; navDestId = id; pendingDirProb = prob; pendingDirId = id;
+        activeTransport = 'driving'; modeRouteCache = {};
+        document.querySelectorAll('.transport-mode').forEach(m => { m.classList.remove('active'); m.classList.add('loading'); });
+        document.querySelector('.transport-mode[data-mode="driving"]').classList.add('active');
+        const from = userLoc || [12.9716, 77.5946];
+        fetchRealRoute(from, [lat, lng], 'driving', 'https://routing.openstreetmap.de/routed-car', prob, true);
+        fetchRealRoute(from, [lat, lng], 'bike', 'https://routing.openstreetmap.de/routed-bike', prob, false);
+        fetchRealRoute(from, [lat, lng], 'foot', 'https://routing.openstreetmap.de/routed-foot', prob, false);
+      };
+
+      async function fetchRealRoute(from, to, modeKey, serverUrl, prob, isActive) {
+        const osrmProfile = modeKey === 'bike' ? 'cycling' : modeKey === 'foot' ? 'foot' : 'driving';
+        const url = `${serverUrl}/route/v1/${osrmProfile}/${from[1]},${from[0]};${to[1]},${to[0]}?overview=full&geometries=geojson&steps=true&alternatives=false`;
+        try {
+          const resp = await fetch(url); const data = await resp.json();
+          if (data.code !== 'Ok' || !data.routes || !data.routes[0]) {
+            const el = document.getElementById('eta-' + modeKey); if (el) el.textContent = 'N/A';
+            document.querySelector(`.transport-mode[data-mode="${modeKey}"]`).classList.remove('loading'); return;
+          }
+          const route = data.routes[0];
+          const distKm = (route.distance / 1000).toFixed(1);
+          const durSec = route.duration, durMin = Math.round(durSec / 60);
+          const durText = durMin < 60 ? durMin + 'min' : Math.floor(durMin / 60) + 'h ' + durMin % 60 + 'm';
+          const eta = new Date(Date.now() + durSec * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          const steps = [];
+          if (route.legs) { route.legs.forEach(leg => { if (leg.steps) { leg.steps.forEach(s => { if (s.maneuver && s.distance > 5) { steps.push({ arrow: getManeuverArrow(s.maneuver.type, s.maneuver.modifier), text: s.name || formatManeuver(s.maneuver.type, s.maneuver.modifier), dist: s.distance > 1000 ? (s.distance / 1000).toFixed(1) + ' km' : Math.round(s.distance) + ' m', location: s.maneuver.location }); } }); } }); }
+          modeRouteCache[modeKey] = { distance: distKm, duration: durSec, durText, eta, steps, geometry: route.geometry };
+          const etaEl = document.getElementById('eta-' + modeKey); const distEl = document.getElementById('dist-' + modeKey);
+          if (etaEl) etaEl.textContent = durText; if (distEl) distEl.textContent = distKm + ' km';
+          document.querySelector(`.transport-mode[data-mode="${modeKey}"]`).classList.remove('loading');
+          if (isActive) showRouteOnMap(modeKey, prob);
+        } catch (e) {
+          const el = document.getElementById('eta-' + modeKey); if (el) el.textContent = 'N/A';
+          document.querySelector(`.transport-mode[data-mode="${modeKey}"]`).classList.remove('loading');
+        }
+      }
+
+      function getManeuverArrow(type, modifier) {
+        if (type === 'arrive') return '🏁'; if (type === 'depart') return '🚩'; if (!modifier) return '⬆️';
+        if (modifier.includes('slight') && modifier.includes('left')) return '↖️';
+        if (modifier.includes('slight') && modifier.includes('right')) return '↗️';
+        if (modifier.includes('sharp') && modifier.includes('left')) return '↩️';
+        if (modifier.includes('sharp') && modifier.includes('right')) return '↪️';
+        if (modifier.includes('left')) return '⬅️'; if (modifier.includes('right')) return '➡️';
+        if (modifier.includes('uturn')) return '↩️'; if (modifier.includes('straight')) return '⬆️'; return '⬆️';
+      }
+      function formatManeuver(type, modifier) {
+        if (type === 'depart') return 'Head straight'; if (type === 'arrive') return 'Arrive at destination';
+        if (type === 'roundabout') return 'Take roundabout'; if (type === 'new name') return 'Continue';
+        const dir = modifier ? modifier.replace(/-/g, ' ') : '';
+        if (type === 'turn') return `Turn ${dir}`; if (type === 'fork') return `Take the ${dir} fork`;
+        if (type === 'merge') return `Merge ${dir}`; if (type === 'end of road') return `At end of road, turn ${dir}`;
+        return `Continue ${dir}`.trim() || 'Continue';
+      }
+
+      function showRouteOnMap(modeKey, prob) {
+        const cached = modeRouteCache[modeKey]; if (!cached) return;
+        const coords = cached.geometry.coordinates.map(c => [c[1], c[0]]);
+        const lineStyle = modeKey === 'foot' ? { color: '#0ea5e9', weight: 4, opacity: 0.85, dashArray: '8, 12', lineCap: 'round' } : { color: '#0ea5e9', weight: 5, opacity: 0.9 };
+        if (window._routePolyline) { map.removeLayer(window._routePolyline); window._routePolyline = null; }
+        window._routePolyline = L.polyline(coords, lineStyle).addTo(map);
+        map.fitBounds(window._routePolyline.getBounds(), { padding: [50, 50] });
+        document.getElementById('sheet-dest').textContent = prob;
+        document.getElementById('sheet-eta').textContent = cached.eta;
+        document.getElementById('sheet-dist').textContent = cached.distance + ' km';
+        document.getElementById('sheet-dur').textContent = cached.durText;
+        document.getElementById('route-sheet').style.display = 'block';
+        routeSteps = cached.steps; map.closePopup();
+      }
+
+      window.selectTransport = function (mode) {
+        activeTransport = mode;
+        document.querySelectorAll('.transport-mode').forEach(m => m.classList.remove('active'));
+        document.querySelector(`.transport-mode[data-mode="${mode}"]`).classList.add('active');
+        if (destLat && destLng) {
+          if (modeRouteCache[mode]) { showRouteOnMap(mode, pendingDirProb); }
+          else {
+            const from = userLoc || [12.9716, 77.5946];
+            const serverUrl = mode === 'bike' ? 'https://routing.openstreetmap.de/routed-bike' : mode === 'foot' ? 'https://routing.openstreetmap.de/routed-foot' : 'https://routing.openstreetmap.de/routed-car';
+            fetchRealRoute(from, [destLat, destLng], mode, serverUrl, pendingDirProb, true);
+          }
+        }
+      };
+
+      window.cancelRoute = function () {
+        document.getElementById('route-sheet').style.display = 'none';
+        if (window._routePolyline) { map.removeLayer(window._routePolyline); window._routePolyline = null; }
+        destLat = destLng = null; navDestId = null; modeRouteCache = {}; render();
+      };
+
+      window.startNav = function () {
+        if (!window._routePolyline) return;
+        isNav = true; navStepIndex = 0; document.body.classList.add('navigating');
+        document.getElementById('route-sheet').style.display = 'none';
+        document.getElementById('nav-hud').style.display = 'block';
+        if (userMarker) { map.removeLayer(userMarker); userMarker = null; }
+        if (accCircle) { map.removeLayer(accCircle); accCircle = null; }
+        navArrow = L.marker(userLoc || [12.9716, 77.5946], { icon: navIcon(), zIndexOffset: 2000 }).addTo(map);
+        map.setView(userLoc || [12.9716, 77.5946], 17); render(); updateHUD();
+      };
+
+      function updateHUD() {
+        if (!destLat) return;
+        const d = map.distance(userLoc, [destLat, destLng]);
+        document.getElementById('hud-dist').textContent = d > 1000 ? `${(d / 1000).toFixed(1)} km` : `${Math.round(d)} m`;
+        const step = routeSteps[navStepIndex] || {};
+        document.getElementById('hud-arrow').textContent = step.arrow || '⬆️';
+        document.getElementById('hud-instr').textContent = step.text || 'Continue to destination';
+        if (step.location && userLoc) {
+          const distToStep = map.distance(userLoc, [step.location[1], step.location[0]]);
+          if (distToStep < 30 && navStepIndex < routeSteps.length - 1) navStepIndex++;
+        }
+        const cached = modeRouteCache[activeTransport];
+        if (cached) {
+          const progress = 1 - (d / (cached.distance * 1000));
+          const remainSec = cached.duration * (1 - Math.max(0, Math.min(1, progress)));
+          document.getElementById('hud-eta').textContent = new Date(Date.now() + remainSec * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        }
+        document.getElementById('hud-remain').textContent = `${(d / 1000).toFixed(1)} km left`;
+      }
+
+      function arrive() { endNav(); toast('🏁 You have arrived!'); }
+
+      window.endNav = function () {
+        isNav = false; navStepIndex = 0; document.body.classList.remove('navigating');
+        document.getElementById('nav-hud').style.display = 'none';
+        if (navArrow) { map.removeLayer(navArrow); navArrow = null; }
+        if (window._routePolyline) { map.removeLayer(window._routePolyline); window._routePolyline = null; }
+        destLat = destLng = null; navDestId = null; modeRouteCache = {};
+        if (userLoc) {
+          userMarker = L.marker(userLoc, { icon: userIcon, zIndexOffset: 1000 }).addTo(map);
+          accCircle = L.circle(userLoc, { radius: 20, color: '#3b82f6', fillOpacity: 0.08, weight: 1 }).addTo(map);
+          map.setView(userLoc, 14);
+        }
+        render();
+      };
+
+      function render() {
+        markerLayer.clearLayers();
+        const ghosts = [];
+        Object.entries(allReports).forEach(([id, r]) => {
+          if (activeFilter !== 'all' && r.category !== activeFilter) return;
+          const zone = r.zone || 'green';
+          if (isNav) {
+            const isDestination = (id === navDestId);
+            const isCritical = (zone === 'red' && r.severity >= 7);
+            if (!isDestination && !isCritical) return;
+          }
+          if (r.ghost_heat) ghosts.push([r.latitude, r.longitude, (r.intensity || 0.5) * 0.5]);
+          const m = L.marker([r.latitude, r.longitude], { icon: ICONS[zone] || ICONS.green });
+          m._reportId = id; m._severity = r.severity || 0;
+          if (!(isNav && id === navDestId)) { m.bindPopup(popup(r, id), { maxWidth: 300, className: 'aura-popup' }); }
+          markerLayer.addLayer(m);
+        });
+        ghostLayer.setLatLngs(isNav ? [] : ghosts);
+        updateCounts();
+      }
+
+      function updateCounts() {
+        const reps = Object.values(allReports);
+        document.getElementById('cnt-all').textContent = reps.length;
+        ['Flood', 'Fire', 'Medical', 'Shelter', 'Food'].forEach(c => {
+          const el = document.getElementById('cnt-' + c);
+          if (el) el.textContent = reps.filter(r => r.category === c).length;
+        });
+      }
+
+      const q = query(collection(db, 'heatmap_reports'), where('resolved', '==', false));
+      onSnapshot(q, snap => {
+        snap.docChanges().forEach(ch => {
+          if (ch.type === 'added' || ch.type === 'modified') allReports[ch.doc.id] = ch.doc.data();
+          if (ch.type === 'removed') delete allReports[ch.doc.id];
+        });
+        render();
+        // Notify Flutter of report updates
+        try {
+          const reps = Object.values(allReports);
+          window.parent.postMessage(JSON.stringify({
+            action: 'reports_updated',
+            count: reps.length,
+            reports: reps.slice(0, 50)
+          }), '*');
+        } catch(e) {}
+      });
+      window.allReports = allReports;
+
+      function stats() {
+        const r = Object.values(allReports);
+        const s = JSON.stringify({ total: r.length, red: r.filter(x => x.zone === 'red').length, yellow: r.filter(x => x.zone === 'yellow').length, green: r.filter(x => x.zone === 'green').length, ghost: r.filter(x => x.ghost_heat).length });
+        document.getElementById('stats-data').textContent = s;
+      }
+      setInterval(stats, 5000);
+
+      window.setHeatMapFilter = window.selectCategory;
+      window.centerMap = (lat, lng, z) => map.setView([lat, lng], z || 14);
+      window.toggleGhostHeat = show => { ghostLayer.setLatLngs(show ? Object.values(allReports).filter(r => r.ghost_heat).map(r => [r.latitude, r.longitude, 0.5]) : []); };
+      window.getMap = () => map;
+
+      map.on('zoomend', render);
+      window.addEventListener('resize', () => map.invalidateSize());
+      setTimeout(() => map.invalidateSize(), 500);
+    })();
+  </script>
+</body>
+
+</html>
